@@ -24,11 +24,15 @@ export function HistoryTimeline() {
   const [filter, setFilter] = useState("all");
 
   useEffect(() => {
-    fetch("/api/history")
+    let cancelled = false;
+    fetch("/api/history", { cache: "no-store" })
       .then((r) => r.json())
       .then((json) => {
-        if (json.ok) setRepairs(json.data.repairs);
+        if (!cancelled && json.ok) setRepairs(json.data.repairs);
       });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const filtered =

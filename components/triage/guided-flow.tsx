@@ -264,6 +264,7 @@ export function GuidedIncidentFlow() {
 
   async function markSolved() {
     setBusy(true);
+    setError(null);
     try {
       const description = buildProblemSummary({
         applianceName: appliance?.name || "Appliance",
@@ -273,7 +274,7 @@ export function GuidedIncidentFlow() {
         notes: notes || "Resolved via guided DIY",
         answers: answerRows,
       });
-      await fetch("/api/history/diy-complete", {
+      const res = await fetch("/api/history/diy-complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -290,9 +291,14 @@ export function GuidedIncidentFlow() {
             "Guided DIY completed",
         }),
       });
+      const json = await res.json();
+      if (!json.ok) {
+        throw new Error(json.error?.message || "Could not save to Home History");
+      }
       router.push("/history");
-    } catch {
-      router.push("/history");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save to Home History");
+      setBusy(false);
     }
   }
 

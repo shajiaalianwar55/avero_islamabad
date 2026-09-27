@@ -60,6 +60,16 @@ export function DiyWizard({ incidentId }: { incidentId: string }) {
       return;
     }
     if (status === "RESOLVED") {
+      await fetch("/api/history/diy-complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          description: planTitle || "DIY plan completed",
+          appliance_name: planTitle || "Home fix",
+          work_done: "Resolved with Avero DIY wizard",
+          area: "F-10",
+        }),
+      }).catch(() => null);
       router.push(`/history`);
       return;
     }

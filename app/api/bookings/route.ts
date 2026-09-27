@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { ok, fail } from "@/lib/api";
-import { createBooking } from "@/lib/db/bookings";
+import { createBooking, createRepairRecord } from "@/lib/db/bookings";
 import {
   getOffer,
   getProvider,
@@ -9,10 +9,13 @@ import {
 } from "@/lib/db/providers";
 import {
   ensureServiceRequestForIncident,
+  getIncident,
   getServiceRequest,
   updateIncidentStatus,
 } from "@/lib/db/incidents";
 import { DEMO_USER_ID } from "@/lib/demo/store";
+import { computeWarrantyExpiresAt } from "@/lib/history/warranty";
+import { env } from "@/lib/env";
 import type { Offer } from "@/types/db";
 
 const bodySchema = z.object({
@@ -113,6 +116,36 @@ export async function POST(request: Request) {
 
     await updateIncidentStatus(serviceRequest.incident_id, "BOOKED");
 
+    // Demo: write Home History immediately on book so the journey always lands there
+    let repair = null;
+    if (env.NEXT_PUBLIC_DEMO_MODE) {
+      const incident = await getIncident(serviceRequest.incident_id);
+      if (incident) {
+        const completedAt = new Date().toISOString();
+        const warrantyDays = offer.warranty_days ?? 30;
+        repair = await createRepairRecord({
+          home_id: incident.home_id,
+          asset_id: incident.asset_id,
+          incident_id: incident.id,
+          booking_id: booking.id,
+          title: serviceRequest.title || `${provider?.name || "Technician"} visit`,
+          work_done: `Booked ${provider?.name || "provider"} — ${
+            serviceRequest.problem_summary || "service completed for demo"
+          }`,
+          parts_replaced: [],
+          amount_paid: amount,
+          provider_name: provider?.name ?? null,
+          completed_at: completedAt,
+          warranty_days: warrantyDays,
+          warranty_expires_at: computeWarrantyExpiresAt(completedAt, warrantyDays),
+          before_images: [],
+          after_images: [],
+          notes: "Saved when booking was confirmed (demo)",
+        });
+        await updateIncidentStatus(incident.id, "RESOLVED");
+      }
+    }
+
     return ok(
       {
         booking,
@@ -120,6 +153,7 @@ export async function POST(request: Request) {
         provider,
         offer,
         serviceRequest,
+        repair,
         protection: {
           estimated_service: amount,
           visit_fee: offer.visit_fee,

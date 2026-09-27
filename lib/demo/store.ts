@@ -23,6 +23,10 @@ import type {
   TriageDecisionRow,
 } from "@/types/db";
 import type { BookingStatus, IncidentStatus, PaymentState } from "@/types";
+import {
+  mergePersistedRepairs,
+  persistRepair,
+} from "@/lib/demo/repair-persist";
 
 /** Fixed demo UUIDs — keep in sync with supabase/seed.sql */
 export const DEMO_USER_ID = "11111111-1111-1111-1111-111111111111";
@@ -249,7 +253,10 @@ function demoStore(): DemoStore {
   if (!globalForDemo.__averoDemoStore) {
     globalForDemo.__averoDemoStore = createSeedStore();
   }
-  return globalForDemo.__averoDemoStore;
+  const store = globalForDemo.__averoDemoStore;
+  // Re-merge disk-backed repairs after any in-memory wipe / fresh seed
+  store.repairRecords = mergePersistedRepairs(store.repairRecords);
+  return store;
 }
 
 export function getDemoStore(): DemoStore {
@@ -719,11 +726,15 @@ export function createRepairRecord(
     created_at: nowIso(),
   };
   demoStore().repairRecords.push(row);
+  persistRepair(row);
   return row;
 }
 
 export function listRepairHistory(homeId: string = DEMO_HOME_ID): RepairRecord[] {
-  return demoStore().repairRecords
+  // Prefer union of memory + disk so history never silently drops recent DIY/tech jobs
+  const merged = mergePersistedRepairs(demoStore().repairRecords);
+  demoStore().repairRecords = merged;
+  return merged
     .filter((r) => r.home_id === homeId)
     .sort((a, b) => b.completed_at.localeCompare(a.completed_at));
 }
