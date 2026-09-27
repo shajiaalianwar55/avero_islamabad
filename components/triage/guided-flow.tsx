@@ -348,7 +348,7 @@ export function GuidedIncidentFlow() {
                   Just talk — Avero speaks and listens
                 </p>
                 <p className="mt-1 text-sm text-[var(--avero-muted)]">
-                  Voice waves only. Works best in Chrome or Edge with mic on.
+                  Works best in Chrome or Edge with mic on.
                 </p>
               </div>
             </div>
