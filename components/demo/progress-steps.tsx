@@ -5,31 +5,32 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
 const STEPS = [
-  { id: "report", label: "Report", match: ["/incident/new"] },
-  { id: "triage", label: "Questions", match: ["/incident/"] },
-  { id: "decision", label: "Decision", match: ["/decision", "/diy"] },
-  { id: "offers", label: "Offers", match: ["/providers"] },
-  { id: "book", label: "Book", match: ["/booking/"] },
-  { id: "history", label: "History", match: ["/history"] },
+  { id: "report", label: "Report" },
+  { id: "appliance", label: "Appliance" },
+  { id: "questions", label: "Questions" },
+  { id: "decision", label: "Decision" },
+  { id: "action", label: "Fix / Book" },
+  { id: "history", label: "History" },
 ] as const;
 
-function activeIndex(pathname: string): number {
-  if (pathname.includes("/booking/")) return 4;
+function activeIndex(pathname: string, forceStep?: number): number {
+  if (typeof forceStep === "number") return forceStep;
   if (pathname.includes("/history")) return 5;
-  if (pathname.includes("/providers")) return 3;
-  if (pathname.includes("/diy") || pathname.includes("/decision")) return 2;
+  if (pathname.includes("/booking/")) return 4;
+  if (pathname.includes("/providers") || pathname.includes("/diy")) return 4;
+  if (pathname.includes("/decision")) return 3;
   if (pathname === "/incident/new") return 0;
-  if (pathname.startsWith("/incident/")) return 1;
+  if (pathname.startsWith("/incident/")) return 2;
   return 0;
 }
 
 export function DemoProgress({ forceStep }: { forceStep?: number }) {
   const pathname = usePathname();
-  const current = forceStep ?? activeIndex(pathname);
+  const current = activeIndex(pathname, forceStep);
 
   return (
     <div className="mb-8 overflow-x-auto">
-      <ol className="flex min-w-[520px] items-center gap-1 text-xs sm:text-sm">
+      <ol className="flex min-w-[560px] items-center gap-1 text-xs sm:text-sm">
         {STEPS.map((step, i) => {
           const done = i < current;
           const active = i === current;
@@ -69,14 +70,14 @@ export function DemoProgress({ forceStep }: { forceStep?: number }) {
         })}
       </ol>
       <p className="mt-2 text-center text-xs text-[var(--avero-muted)]">
-        Demo path: report → answer → decide → offers → book → history
+        Report → appliance → questions → DIY / technician / emergency → history
       </p>
       {pathname.includes("/providers") && (
         <p className="mt-1 text-center text-xs">
           <Link href="/provider" className="text-[var(--avero-teal)] underline">
-            Optional: open provider portal
+            Optional: provider portal
           </Link>{" "}
-          to submit a live quote
+          for a live quote
         </p>
       )}
     </div>

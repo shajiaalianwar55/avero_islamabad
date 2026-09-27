@@ -1,20 +1,19 @@
-# Judge demo script (≈3 minutes)
+# Judge demo script (≈3–4 minutes)
 
-## Opening (15s)
-Homepage: “When something breaks in Islamabad, the first problem is knowing what to do. Avero starts before booking.”
+## Opening
+Homepage → big **Tell us about the problem** card.
 
-## Technician path (~2 min)
-1. Click **1. Technician** guided demo card.
-2. Tap answer chips (no typing).
-3. Decision screen → **See technician offers**.
-4. Wait ~2s for demo offers → **Book recommended offer**.
-5. **Complete repair → Home History**.
-6. Point at warranty AC record already in history.
+## Flow
+1. Tap the big start card (or Report a problem).
+2. Pick an appliance (Kitchen sink / Bedroom AC / Wall socket / …) or **Add another**.
+3. Answer the MCQs for that appliance.
+4. Decision:
+   - **DIY** → guided steps + sticky **Click if issue has been solved**; or escalate to technician.
+   - **Technician** → offers → book → complete → history.
+   - **Emergency** (e.g. wall socket + burning smell) → safety override.
 
-## Emergency proof (20s)
-Homepage → **3. Emergency** → instant safety override.
+## Suggested live path
+Kitchen sink → answers that lean technician (or DIY then escalate) → offers → book → history.  
+Then Wall socket with burning smell for emergency.
 
-## Optional
-Floating **Demos** button if you leave the homepage.
-
-Do **not** rely on voice/photo during the pitch.
+No premade “Technician / DIY / Emergency” shortcut cards — the path comes from the user’s appliance answers.

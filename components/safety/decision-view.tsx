@@ -62,7 +62,7 @@ export function DecisionView({ incidentId }: { incidentId: string }) {
   if (outcome === "EMERGENCY" || data.incident?.status === "EMERGENCY") {
     return (
       <div className="space-y-4">
-        <DemoProgress forceStep={2} />
+        <DemoProgress forceStep={3} />
         <Card className="border-[var(--avero-danger)]">
           <CardHeader>
             <Badge variant="danger">Emergency</Badge>
@@ -101,8 +101,8 @@ export function DecisionView({ incidentId }: { incidentId: string }) {
             <p className="text-[var(--avero-muted)]">
               Avero is not a substitute for emergency services.
             </p>
-            <Link href="/#start-demo">
-              <Button variant="secondary">Back to demos</Button>
+            <Link href="/incident/new">
+              <Button variant="secondary">Report another problem</Button>
             </Link>
           </CardContent>
         </Card>
@@ -118,7 +118,7 @@ export function DecisionView({ incidentId }: { incidentId: string }) {
 
   return (
     <div className="space-y-4">
-      <DemoProgress forceStep={2} />
+      <DemoProgress forceStep={3} />
       <div className="flex flex-wrap gap-2">
         <Badge>{String(outcome || "Pending")}</Badge>
         <Badge variant="outline">

@@ -45,9 +45,9 @@ export function HistoryTimeline() {
           Repairs and warranties stay with the home. The seeded Bedroom AC record shows
           active warranty for repeat issues.
         </p>
-        <Link href="/#start-demo" className="mt-3 inline-block">
+        <Link href="/incident/new" className="mt-3 inline-block">
           <Button variant="secondary" size="sm">
-            Run another demo
+            Report another problem
           </Button>
         </Link>
       </div>

@@ -115,6 +115,13 @@ export function fallbackDiyReassessment(input: {
       reason_summary: "New hazard signs reported during DIY",
     };
   }
+  // Explicit user confirmation that the issue is fixed — always resolve
+  if (/issue has been solved|already fixed|problem is solved|fully fixed/.test(t)) {
+    return {
+      status: "RESOLVED",
+      reason_summary: "User confirmed the issue has been solved",
+    };
+  }
   if (/no|fail|worse|still|not working|didn't|cannot|can't/.test(t)) {
     if (input.stepOrder >= input.totalSteps) {
       return {

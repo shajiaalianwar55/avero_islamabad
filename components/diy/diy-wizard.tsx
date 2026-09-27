@@ -34,7 +34,7 @@ export function DiyWizard({ incidentId }: { incidentId: string }) {
       .finally(() => setLoading(false));
   }, [incidentId]);
 
-  async function respond(response: "DONE" | "CANNOT" | "DIFFERENT" | "STOP") {
+  async function respond(response: "DONE" | "CANNOT" | "DIFFERENT" | "STOP" | "SOLVED") {
     if (!step) return;
     setBusy(true);
     const stepOrder = step.step_order ?? step.order ?? 1;
@@ -43,6 +43,7 @@ export function DiyWizard({ incidentId }: { incidentId: string }) {
       CANNOT: "Cannot do this step",
       DIFFERENT: "Something looks different than expected",
       STOP: "Stop DIY",
+      SOLVED: "Issue has been solved — user confirmed fixed",
     };
     const res = await fetch(`/api/incidents/${incidentId}/diy/respond`, {
       method: "POST",
@@ -85,8 +86,8 @@ export function DiyWizard({ incidentId }: { incidentId: string }) {
   const order = step?.step_order ?? step?.order;
 
   return (
-    <div className="space-y-4">
-      <DemoProgress forceStep={2} />
+    <div className="relative space-y-4 pb-24">
+      <DemoProgress forceStep={4} />
       <Card>
         <CardHeader>
           <CardTitle>{planTitle || "DIY guidance"}</CardTitle>
@@ -129,8 +130,18 @@ export function DiyWizard({ incidentId }: { incidentId: string }) {
           Looks different
         </Button>
         <Button disabled={busy} variant="danger" onClick={() => respond("STOP")}>
-          Stop / escalate
+          Still not fixed — get a technician
         </Button>
+      </div>
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--avero-line)] bg-[var(--avero-panel)]/95 px-4 py-3 backdrop-blur">
+        <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-[var(--avero-muted)]">
+            Issue already fixed? You can leave DIY anytime.
+          </p>
+          <Button size="lg" disabled={busy} onClick={() => respond("SOLVED")}>
+            Click if issue has been solved
+          </Button>
+        </div>
       </div>
     </div>
   );

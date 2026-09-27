@@ -1,0 +1,544 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DemoProgress } from "@/components/demo/progress-steps";
+import { VoiceTalkMode } from "@/components/voice/voice-talk-mode";
+import { ISLAMABAD_AREAS } from "@/types";
+import {
+  APPLIANCE_DIY,
+  APPLIANCE_MCQS,
+  DEMO_APPLIANCES,
+  buildProblemSummary,
+  scoreOutcome,
+  type ApplianceDef,
+  type FlowOutcome,
+  type Mcq,
+} from "@/lib/demo/appliance-flows";
+
+type Phase = "report" | "appliance" | "questions" | "decision" | "diy";
+
+export function GuidedIncidentFlow() {
+  const router = useRouter();
+  const [talkMode, setTalkMode] = useState(false);
+  const [phase, setPhase] = useState<Phase>("report");
+  const [area, setArea] = useState("F-10");
+  const [notes, setNotes] = useState("");
+  const [appliance, setAppliance] = useState<ApplianceDef | null>(null);
+  const [customName, setCustomName] = useState("");
+  const [customCategory, setCustomCategory] = useState("appliance");
+  const [addingCustom, setAddingCustom] = useState(false);
+  const [mcqIndex, setMcqIndex] = useState(0);
+  const [answers, setAnswers] = useState<
+    Array<{
+      question: string;
+      answer: string;
+      scores: Parameters<typeof scoreOutcome>[0][number]["scores"];
+    }>
+  >([]);
+  const [outcome, setOutcome] = useState<FlowOutcome | null>(null);
+  const [diyStep, setDiyStep] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const mcqs: Mcq[] = useMemo(() => {
+    if (!appliance) return [];
+    return APPLIANCE_MCQS[appliance.id] || APPLIANCE_MCQS.custom;
+  }, [appliance]);
+
+  const diySteps = useMemo(() => {
+    if (!appliance) return APPLIANCE_DIY.custom;
+    return APPLIANCE_DIY[appliance.id] || APPLIANCE_DIY.custom;
+  }, [appliance]);
+
+  const progressStep =
+    phase === "report"
+      ? 0
+      : phase === "appliance"
+        ? 1
+        : phase === "questions"
+          ? 2
+          : phase === "decision"
+            ? 3
+            : 4;
+
+  if (talkMode) {
+    return (
+      <div className="space-y-4">
+        <DemoProgress forceStep={progressStep} />
+        <VoiceTalkMode onExit={() => setTalkMode(false)} />
+      </div>
+    );
+  }
+
+  function selectAppliance(a: ApplianceDef) {
+    setAppliance(a);
+    setAnswers([]);
+    setMcqIndex(0);
+    setOutcome(null);
+    setPhase("questions");
+  }
+
+  function addCustomAppliance() {
+    if (!customName.trim()) return;
+    selectAppliance({
+      id: "custom",
+      name: customName.trim(),
+      category: customCategory,
+      room: "Home",
+      icon: "🏠",
+      blurb: "Custom appliance",
+    });
+    setAddingCustom(false);
+  }
+
+  function answerMcq(option: Mcq["options"][number]) {
+    const q = mcqs[mcqIndex];
+    if (!q) return;
+    const nextAnswers = [
+      ...answers,
+      { question: q.question, answer: option.label, scores: option.score },
+    ];
+    setAnswers(nextAnswers);
+    if (mcqIndex + 1 < mcqs.length) {
+      setMcqIndex(mcqIndex + 1);
+      return;
+    }
+    const result = scoreOutcome(
+      nextAnswers.map((a) => ({ optionId: a.answer, scores: a.scores }))
+    );
+    setOutcome(result.outcome);
+    setPhase("decision");
+  }
+
+  async function continueTechnician() {
+    if (!appliance || !outcome) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const description = buildProblemSummary({
+        applianceName: appliance.name,
+        room: appliance.room,
+        notes,
+        answers: answers.map((a) => ({ question: a.question, answer: a.answer })),
+      });
+      const res = await fetch("/api/incidents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ description, area }),
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message || "Failed");
+      const id = json.data.incident.id as string;
+
+      // Force technician path for offers even if API classified differently
+      const sr = await fetch(`/api/incidents/${id}/service-request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }).then((r) => r.json());
+
+      if (sr.ok) {
+        router.push(`/incident/${id}/providers?sr=${sr.data.serviceRequest.id}`);
+      } else {
+        router.push(`/incident/${id}/decision`);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not continue");
+      setBusy(false);
+    }
+  }
+
+  async function continueEmergency() {
+    if (!appliance) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const description = buildProblemSummary({
+        applianceName: appliance.name,
+        room: appliance.room,
+        notes: notes || "Emergency signs reported during guided questions",
+        answers: answers.map((a) => ({ question: a.question, answer: a.answer })),
+      });
+      // Ensure emergency keywords for safety gate
+      const withHazard = `${description}. Possible hazard: burning smell sparks or gas smell reported.`;
+      const res = await fetch("/api/incidents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ description: withHazard, area }),
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error?.message || "Failed");
+      router.push(`/incident/${json.data.incident.id}/decision`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not continue");
+      setBusy(false);
+    }
+  }
+
+  async function markSolved() {
+    setBusy(true);
+    try {
+      // Record a resolved DIY incident for history context
+      const description = buildProblemSummary({
+        applianceName: appliance?.name || "Appliance",
+        room: appliance?.room || "Home",
+        notes: notes || "Resolved via guided DIY",
+        answers: answers.map((a) => ({ question: a.question, answer: a.answer })),
+      });
+      await fetch("/api/incidents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          description: `${description}. User confirmed DIY resolved.`,
+          area,
+        }),
+      });
+      router.push("/history");
+    } catch {
+      router.push("/history");
+    }
+  }
+
+  async function escalateFromDiy() {
+    setOutcome("TECHNICIAN");
+    await continueTechnician();
+  }
+
+  return (
+    <div className="space-y-4">
+      <DemoProgress forceStep={progressStep} />
+
+      {phase === "report" && (
+        <div className="space-y-4">
+          <button
+            type="button"
+            onClick={() => setPhase("appliance")}
+            className="w-full rounded-2xl border-2 border-[var(--avero-teal)] bg-[var(--avero-panel)] px-6 py-12 text-left shadow-sm transition hover:shadow-md"
+          >
+            <p className="text-sm font-semibold uppercase tracking-wider text-[var(--avero-teal)]">
+              Start here
+            </p>
+            <h2 className="mt-3 font-[family-name:var(--font-display)] text-3xl text-[var(--avero-ink)] md:text-4xl">
+              Something broke? Tell us what&apos;s wrong.
+            </h2>
+            <p className="mt-3 max-w-xl text-[var(--avero-muted)]">
+              Pick the appliance, answer a few questions, and Avero will choose DIY,
+              technician, or emergency — step by step.
+            </p>
+            <p className="mt-6 text-base font-semibold text-[var(--avero-teal)]">
+              Tap to continue →
+            </p>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setTalkMode(true)}
+            className="w-full rounded-2xl border border-[var(--avero-line)] bg-[var(--avero-panel)] px-6 py-8 text-left transition hover:border-[var(--avero-teal)]"
+          >
+            <div className="flex items-center gap-4">
+              <span
+                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[var(--avero-teal)]/10"
+                aria-hidden
+              >
+                <span className="flex gap-0.5">
+                  {[0, 1, 2, 3, 4].map((i) => (
+                    <span
+                      key={i}
+                      className="w-1 rounded-full bg-[var(--avero-teal)]"
+                      style={{ height: `${8 + (i % 3) * 6}px` }}
+                    />
+                  ))}
+                </span>
+              </span>
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-wider text-[var(--avero-teal)]">
+                  Talk mode
+                </p>
+                <p className="mt-1 font-[family-name:var(--font-display)] text-xl text-[var(--avero-ink)]">
+                  Just talk — Avero speaks and listens
+                </p>
+                <p className="mt-1 text-sm text-[var(--avero-muted)]">
+                  Voice waves only. No tapping through questions. Works best in Chrome
+                  or Edge with mic on.
+                </p>
+              </div>
+            </div>
+          </button>
+
+          <div className="space-y-2">
+            <Label htmlFor="area">Your Islamabad area</Label>
+            <select
+              id="area"
+              value={area}
+              onChange={(e) => setArea(e.target.value)}
+              className="flex h-10 w-full max-w-xs rounded-md border border-[var(--avero-line)] bg-white px-3 text-sm"
+            >
+              {ISLAMABAD_AREAS.map((a) => (
+                <option key={a} value={a}>
+                  {a}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="notes">Optional: describe what you noticed</Label>
+            <Textarea
+              id="notes"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="e.g. Water under the sink when I wash dishes…"
+            />
+          </div>
+        </div>
+      )}
+
+      {phase === "appliance" && (
+        <div className="space-y-4">
+          <div>
+            <h2 className="font-[family-name:var(--font-display)] text-2xl">
+              Which appliance is it?
+            </h2>
+            <p className="mt-1 text-sm text-[var(--avero-muted)]">
+              Choose one from this home, or add a new appliance.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {DEMO_APPLIANCES.map((a) => (
+              <button
+                key={a.id}
+                type="button"
+                onClick={() => selectAppliance(a)}
+                className="rounded-xl border border-[var(--avero-line)] bg-[var(--avero-panel)] p-4 text-left transition hover:border-[var(--avero-teal)]"
+              >
+                <p className="text-2xl" aria-hidden>
+                  {a.icon}
+                </p>
+                <p className="mt-2 font-semibold text-[var(--avero-ink)]">{a.name}</p>
+                <p className="text-xs text-[var(--avero-muted)]">{a.room}</p>
+                <p className="mt-2 text-sm text-[var(--avero-muted)]">{a.blurb}</p>
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setAddingCustom(true)}
+              className="rounded-xl border-2 border-dashed border-[var(--avero-line)] p-4 text-left hover:border-[var(--avero-teal)]"
+            >
+              <p className="font-semibold text-[var(--avero-ink)]">+ Add another appliance</p>
+              <p className="mt-1 text-sm text-[var(--avero-muted)]">
+                Not in the list? Name it and continue.
+              </p>
+            </button>
+          </div>
+          {addingCustom && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">New appliance</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="space-y-1">
+                  <Label>Name</Label>
+                  <Input
+                    value={customName}
+                    onChange={(e) => setCustomName(e.target.value)}
+                    placeholder="e.g. Fridge, UPS, washing machine"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>Category</Label>
+                  <select
+                    value={customCategory}
+                    onChange={(e) => setCustomCategory(e.target.value)}
+                    className="flex h-10 w-full rounded-md border border-[var(--avero-line)] bg-white px-3 text-sm"
+                  >
+                    {[
+                      "appliance",
+                      "plumbing",
+                      "electrical",
+                      "ac",
+                      "geyser",
+                      "water_pump",
+                      "ups_inverter",
+                      "solar",
+                    ].map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex gap-2">
+                  <Button type="button" onClick={addCustomAppliance}>
+                    Continue with this appliance
+                  </Button>
+                  <Button type="button" variant="ghost" onClick={() => setAddingCustom(false)}>
+                    Cancel
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+          <Button type="button" variant="outline" onClick={() => setPhase("report")}>
+            Back
+          </Button>
+        </div>
+      )}
+
+      {phase === "questions" && appliance && mcqs[mcqIndex] && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline">
+              {appliance.icon} {appliance.name}
+            </Badge>
+            <Badge>
+              Question {mcqIndex + 1} of {mcqs.length}
+            </Badge>
+          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-xl">{mcqs[mcqIndex].question}</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-2">
+              {mcqs[mcqIndex].options.map((opt) => (
+                <Button
+                  key={opt.id}
+                  type="button"
+                  variant="secondary"
+                  className="h-auto justify-start whitespace-normal px-4 py-3 text-left"
+                  onClick={() => answerMcq(opt)}
+                >
+                  {opt.label}
+                </Button>
+              ))}
+            </CardContent>
+          </Card>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              if (mcqIndex === 0) setPhase("appliance");
+              else {
+                setMcqIndex(mcqIndex - 1);
+                setAnswers(answers.slice(0, -1));
+              }
+            }}
+          >
+            Back
+          </Button>
+        </div>
+      )}
+
+      {phase === "decision" && outcome && appliance && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap gap-2">
+            <Badge
+              variant={
+                outcome === "EMERGENCY"
+                  ? "danger"
+                  : outcome === "DIY"
+                    ? "success"
+                    : "default"
+              }
+            >
+              {outcome}
+            </Badge>
+            <Badge variant="outline">{appliance.name}</Badge>
+          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle>
+                {outcome === "EMERGENCY"
+                  ? "This looks unsafe — stop DIY"
+                  : outcome === "DIY"
+                    ? "Safe to try a guided DIY fix"
+                    : "A technician is the better next step"}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm text-[var(--avero-muted)]">
+              <p>
+                Based on your answers about the <strong>{appliance.name}</strong>
+                {notes ? ` (“${notes.slice(0, 80)}${notes.length > 80 ? "…" : ""}”)` : ""}.
+              </p>
+              <ul className="list-disc pl-5">
+                {answers.map((a) => (
+                  <li key={a.question}>
+                    <span className="text-[var(--avero-ink)]">{a.answer}</span>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+          {error && <p className="text-sm text-[var(--avero-danger)]">{error}</p>}
+          <div className="rounded-lg border border-[var(--avero-teal)]/40 bg-[var(--avero-teal)]/5 p-4">
+            {outcome === "DIY" && (
+              <Button size="lg" onClick={() => { setDiyStep(0); setPhase("diy"); }}>
+                Start DIY guidance →
+              </Button>
+            )}
+            {outcome === "TECHNICIAN" && (
+              <Button size="lg" disabled={busy} onClick={continueTechnician}>
+                {busy ? "Finding technicians…" : "See technician offers →"}
+              </Button>
+            )}
+            {outcome === "EMERGENCY" && (
+              <Button size="lg" variant="danger" disabled={busy} onClick={continueEmergency}>
+                {busy ? "Opening safety screen…" : "Show emergency actions →"}
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {phase === "diy" && (
+        <div className="relative space-y-4 pb-24">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="success">DIY</Badge>
+            <Badge variant="outline">
+              Step {diyStep + 1} of {diySteps.length}
+            </Badge>
+          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle>{diySteps[diyStep]?.instruction}</CardTitle>
+            </CardHeader>
+            <CardContent className="text-sm text-[var(--avero-muted)]">
+              Success check: {diySteps[diyStep]?.success_check}
+            </CardContent>
+          </Card>
+          <div className="flex flex-wrap gap-2">
+            {diyStep + 1 < diySteps.length ? (
+              <Button size="lg" onClick={() => setDiyStep(diyStep + 1)}>
+                Done — next step →
+              </Button>
+            ) : (
+              <Button size="lg" disabled={busy} onClick={markSolved}>
+                Finish DIY → History
+              </Button>
+            )}
+            <Button variant="secondary" disabled={busy} onClick={escalateFromDiy}>
+              Still not fixed — get a technician
+            </Button>
+          </div>
+
+          {/* Persistent solved CTA */}
+          <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--avero-line)] bg-[var(--avero-panel)]/95 px-4 py-3 backdrop-blur">
+            <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-[var(--avero-muted)]">
+                Issue already fixed? You can leave DIY anytime.
+              </p>
+              <Button size="lg" disabled={busy} onClick={markSolved}>
+                Click if issue has been solved
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
