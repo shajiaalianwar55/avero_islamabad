@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DemoProgress } from "@/components/demo/progress-steps";
-import { rememberRepair, repairFromApi } from "@/lib/demo/client-history";
+import { rememberRepair, repairFromApi, rememberBooking } from "@/lib/demo/client-history";
 
 type OfferRow = {
   offer: {
@@ -130,7 +130,17 @@ export function OfferComparison({ incidentId }: { incidentId: string }) {
         if (json.data?.repair) {
           rememberRepair(repairFromApi(json.data.repair));
         }
-        router.push(`/booking/${json.data.booking.id}`);
+        rememberBooking({
+          id: json.data.booking.id,
+          provider_name: json.data.provider?.name ?? null,
+          amount: json.data.payment?.amount ?? json.data.protection?.estimated_service ?? null,
+          visit_fee: json.data.offer?.visit_fee ?? null,
+          warranty_days: json.data.offer?.warranty_days ?? null,
+          status: json.data.booking.status,
+          scheduled_for: json.data.booking.scheduled_for,
+        });
+        // History is already written on book — skip fragile booking page
+        router.push("/history");
         return;
       }
       setBookError(json.error?.message || "Could not book this offer.");

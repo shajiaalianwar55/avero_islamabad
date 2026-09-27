@@ -7,7 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DemoProgress } from "@/components/demo/progress-steps";
-import { rememberRepair, repairFromApi } from "@/lib/demo/client-history";
+import {
+  rememberRepair,
+  repairFromApi,
+  readLastBooking,
+} from "@/lib/demo/client-history";
 
 type BookingData = {
   booking: {
@@ -45,12 +49,55 @@ export function BookingPanel({ bookingId }: { bookingId: string }) {
         if (json.data.booking?.status === "COMPLETED") setDone(true);
         return;
       }
+
+      // Recover from browser snapshot if server demo store wiped
+      const local = readLastBooking();
+      if (local && local.id === bookingId) {
+        setData({
+          booking: {
+            id: local.id,
+            status: local.status || "CONFIRMED",
+            scheduled_for: local.scheduled_for || new Date().toISOString(),
+          },
+          payment: {
+            amount: local.amount ?? 0,
+            state: "PROTECTED",
+            is_demo: true,
+          },
+          offer: {
+            visit_fee: local.visit_fee ?? null,
+            warranty_days: local.warranty_days ?? null,
+          },
+          provider: { name: local.provider_name || "Provider" },
+        });
+        setError(null);
+        return;
+      }
+
       setData(null);
-      setError(
-        json.error?.message ||
-          "Booking not found. Demo data may have reset — book an offer again."
-      );
+      setError(json.error?.message || "Booking not found.");
     } catch {
+      const local = readLastBooking();
+      if (local && local.id === bookingId) {
+        setData({
+          booking: {
+            id: local.id,
+            status: local.status || "CONFIRMED",
+            scheduled_for: local.scheduled_for || new Date().toISOString(),
+          },
+          payment: {
+            amount: local.amount ?? 0,
+            state: "PROTECTED",
+            is_demo: true,
+          },
+          offer: {
+            visit_fee: local.visit_fee ?? null,
+            warranty_days: local.warranty_days ?? null,
+          },
+          provider: { name: local.provider_name || "Provider" },
+        });
+        return;
+      }
       setData(null);
       setError("Could not load booking. Check your connection and try again.");
     } finally {
@@ -64,7 +111,6 @@ export function BookingPanel({ bookingId }: { bookingId: string }) {
 
   async function completeDemoFlow() {
     setBusy(true);
-    // Advance provider side then resident confirms — one click for smooth demos
     await fetch(`/api/provider/jobs/${bookingId}/status`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -86,19 +132,22 @@ export function BookingPanel({ bookingId }: { bookingId: string }) {
     const confirmJson = await confirmRes.json().catch(() => null);
     if (confirmJson?.ok && confirmJson.data?.repair) {
       rememberRepair(repairFromApi(confirmJson.data.repair));
+    } else if (data) {
+      // Server booking gone — still record history locally so the demo completes
+      rememberRepair({
+        id: `local-${bookingId}`,
+        title: `${data.provider?.name || "Technician"} visit`,
+        work_done: "Demo repair completed",
+        provider_name: data.provider?.name ?? null,
+        amount_paid: data.payment?.amount ?? null,
+        completed_at: new Date().toISOString(),
+        warranty_days: data.offer?.warranty_days ?? 30,
+        warranty_remaining_days: data.offer?.warranty_days ?? 30,
+      });
     }
-    await refresh();
     setBusy(false);
     setDone(true);
-  }
-
-  async function decideChange(decision: "Approve" | "Decline") {
-    await fetch(`/api/bookings/${bookingId}/change-order`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decision }),
-    });
-    await refresh();
+    router.push("/history");
   }
 
   if (loading && !data) {
@@ -111,13 +160,21 @@ export function BookingPanel({ bookingId }: { bookingId: string }) {
         <p className="text-sm text-[var(--avero-danger)]">
           {error || "Booking not found."}
         </p>
+        <p className="text-sm text-[var(--avero-muted)]">
+          Your booking may already be in Home History. Open history, or report again.
+        </p>
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" size="sm" onClick={() => void refresh()}>
             Retry
           </Button>
-          <Link href="/incident/new">
+          <Link href="/history">
             <Button type="button" size="sm">
-              Report again →
+              Open Home History →
+            </Button>
+          </Link>
+          <Link href="/incident/new">
+            <Button type="button" variant="secondary" size="sm">
+              Report again
             </Button>
           </Link>
         </div>
@@ -152,51 +209,20 @@ export function BookingPanel({ bookingId }: { bookingId: string }) {
         </CardContent>
       </Card>
 
-      {data.booking.change_order?.status === "pending" && (
-        <Card className="border-amber-500">
-          <CardHeader>
-            <CardTitle>
-              Extra charge requested: PKR {data.booking.change_order.additional_amount}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <p>{data.booking.change_order.reason}</p>
-            <div className="flex gap-2">
-              <Button onClick={() => decideChange("Approve")}>Approve</Button>
-              <Button variant="secondary" onClick={() => decideChange("Decline")}>
-                Decline
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       {!done ? (
         <div className="rounded-lg border border-[var(--avero-teal)]/40 bg-[var(--avero-teal)]/5 p-4">
           <p className="text-sm font-medium">Finish the demo repair</p>
           <p className="mt-1 text-sm text-[var(--avero-muted)]">
-            One click simulates technician completion + your confirmation, then opens Home
-            History.
+            One click marks the job done and opens Home History.
           </p>
           <Button
             className="mt-3"
             size="lg"
             disabled={busy}
-            onClick={async () => {
-              await completeDemoFlow();
-              router.push("/history");
-            }}
+            onClick={() => void completeDemoFlow()}
           >
             {busy ? "Completing…" : "Complete repair → Home History"}
           </Button>
-          <div className="mt-3">
-            <Link
-              href={`/provider/jobs/${bookingId}`}
-              className="text-xs text-[var(--avero-muted)] underline"
-            >
-              Or open provider job view manually
-            </Link>
-          </div>
         </div>
       ) : (
         <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-4">

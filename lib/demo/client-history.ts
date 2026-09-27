@@ -76,3 +76,35 @@ export function repairFromApi(row: Record<string, unknown>): LocalRepair {
     category: row.category ? String(row.category) : undefined,
   };
 }
+
+const BOOKING_KEY = "avero_last_booking_v1";
+
+export type LocalBooking = {
+  id: string;
+  provider_name?: string | null;
+  amount?: number | null;
+  visit_fee?: number | null;
+  warranty_days?: number | null;
+  status?: string;
+  scheduled_for?: string;
+};
+
+export function rememberBooking(booking: LocalBooking): void {
+  if (typeof window === "undefined" || !booking?.id) return;
+  try {
+    window.localStorage.setItem(BOOKING_KEY, JSON.stringify(booking));
+  } catch {
+    /* ignore */
+  }
+}
+
+export function readLastBooking(): LocalBooking | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(BOOKING_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as LocalBooking;
+  } catch {
+    return null;
+  }
+}

@@ -27,6 +27,11 @@ import {
   mergePersistedRepairs,
   persistRepair,
 } from "@/lib/demo/repair-persist";
+import {
+  loadPersistedBooking,
+  mergePersistedBookings,
+  persistBookingPair,
+} from "@/lib/demo/booking-persist";
 
 /** Fixed demo UUIDs — keep in sync with supabase/seed.sql */
 export const DEMO_USER_ID = "11111111-1111-1111-1111-111111111111";
@@ -256,6 +261,9 @@ function demoStore(): DemoStore {
   const store = globalForDemo.__averoDemoStore;
   // Re-merge disk-backed repairs after any in-memory wipe / fresh seed
   store.repairRecords = mergePersistedRepairs(store.repairRecords);
+  const mergedBookings = mergePersistedBookings(store.bookings, store.payments);
+  store.bookings = mergedBookings.bookings;
+  store.payments = mergedBookings.payments;
   return store;
 }
 
@@ -683,12 +691,21 @@ export function createBooking(input: {
     updated_at: nowIso(),
   };
   demoStore().payments.push(payment);
+  persistBookingPair(booking, payment);
 
   return { booking, payment };
 }
 
 export function getBooking(id: string): Booking | undefined {
-  return demoStore().bookings.find((b) => b.id === id);
+  const live = demoStore().bookings.find((b) => b.id === id);
+  if (live) return live;
+  const disk = loadPersistedBooking(id);
+  if (disk) {
+    demoStore().bookings.push(disk.booking);
+    if (disk.payment) demoStore().payments.push(disk.payment);
+    return disk.booking;
+  }
+  return undefined;
 }
 
 export function updateBookingStatus(
