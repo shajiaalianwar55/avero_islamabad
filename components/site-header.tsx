@@ -21,12 +21,12 @@ export function SiteHeader() {
           >
             Avero
           </Link>
-          <nav className="flex flex-wrap items-center gap-3 text-sm text-[var(--avero-muted)]">
+          <nav className="flex flex-wrap items-center gap-3 text-sm">
             {links.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
-                className="transition-colors hover:text-[var(--avero-ink)]"
+                className="text-[var(--avero-muted)] transition-colors hover:text-[var(--avero-ink)]"
               >
                 {link.label}
               </Link>
@@ -34,7 +34,7 @@ export function SiteHeader() {
             <LanguageToggle />
             <Link
               href="/incident/new"
-              className="rounded-md bg-[var(--avero-teal)] px-3 py-1.5 text-white hover:opacity-90"
+              className="rounded-md bg-[var(--avero-teal)] px-3 py-1.5 font-medium text-white hover:bg-[var(--avero-teal)]/90 hover:text-white"
             >
               Check a problem
             </Link>
