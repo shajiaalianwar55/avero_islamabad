@@ -99,13 +99,9 @@ export function OfferComparison({ incidentId }: { incidentId: string }) {
     setLoading(false);
   }
 
-  async function book(offerId: string) {
-    if (!offerId) {
-      setBookError("No offer selected.");
-      return;
-    }
+  async function book(preferredOfferId: string) {
     setBookError(null);
-    setBookingId(offerId);
+    setBookingId(preferredOfferId || "booking");
 
     try {
       async function postBooking(id: string) {
@@ -117,46 +113,48 @@ export function OfferComparison({ incidentId }: { incidentId: string }) {
         return res.json();
       }
 
-      let json = await postBooking(offerId);
-
-      // Demo in-memory store can lose offers after a server restart / HMR —
-      // recreate the service request + offers and book the recommended one.
-      if (
-        !json.ok &&
-        (json.error?.code === "NOT_FOUND" || json.error?.code === "VALIDATION_ERROR")
-      ) {
-        let id = srId;
-        const srRes = await fetch(`/api/incidents/${incidentId}/service-request`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
-        });
-        const srJson = await srRes.json();
-        if (srJson.ok) {
-          id = srJson.data.serviceRequest.id as string;
-          setSrId(id);
-        }
-        if (id) {
-          await fetch("/api/demo/offers", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ service_request_id: id }),
-          });
-          await load(id);
-          const refreshed = await fetch(`/api/service-requests/${id}/offers`).then((r) =>
-            r.json()
-          );
-          const rows = (refreshed.ok ? refreshed.data.offers : []) as OfferRow[];
-          const match =
-            rows.find((o) => o.offer.id === offerId) ||
-            rows.find((o) => o.badges?.includes("Recommended")) ||
-            rows[0];
-          if (match) {
-            json = await postBooking(match.offer.id);
-          }
-        }
+      // Always re-anchor to a live service request + offers before booking.
+      // Client offer IDs go stale when the demo in-memory store resets (dev restart / HMR).
+      let id = srId;
+      const srRes = await fetch(`/api/incidents/${incidentId}/service-request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const srJson = await srRes.json();
+      if (srJson.ok) {
+        id = srJson.data.serviceRequest.id as string;
+        setSrId(id);
+      } else if (!id) {
+        setBookError(
+          srJson.error?.message ||
+            "This demo session expired. Report the problem again, then book."
+        );
+        return;
       }
 
+      await fetch("/api/demo/offers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ service_request_id: id }),
+      });
+
+      const refreshed = await fetch(`/api/service-requests/${id}/offers`).then((r) =>
+        r.json()
+      );
+      const rows = (refreshed.ok ? refreshed.data.offers : []) as OfferRow[];
+      if (!rows.length) {
+        setBookError("No live offers yet. Tap Reload demo offers, then book again.");
+        return;
+      }
+      setOffers(rows);
+
+      const match =
+        rows.find((o) => o.offer.id === preferredOfferId) ||
+        rows.find((o) => o.badges?.includes("Recommended")) ||
+        rows[0]!;
+
+      const json = await postBooking(match.offer.id);
       if (json.ok) {
         router.push(`/booking/${json.data.booking.id}`);
         return;

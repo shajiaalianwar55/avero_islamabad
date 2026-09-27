@@ -244,21 +244,21 @@ function createSeedStore(): DemoStore {
 
 const globalForDemo = globalThis as unknown as { __averoDemoStore?: DemoStore };
 
-if (!globalForDemo.__averoDemoStore) {
-  globalForDemo.__averoDemoStore = createSeedStore();
+/** Always read from globalThis — never cache a module-local binding (HMR-safe). */
+function demoStore(): DemoStore {
+  if (!globalForDemo.__averoDemoStore) {
+    globalForDemo.__averoDemoStore = createSeedStore();
+  }
+  return globalForDemo.__averoDemoStore;
 }
 
-/** Module binding kept in sync with globalThis so HMR does not wipe demo offers/bookings. */
-let store: DemoStore = globalForDemo.__averoDemoStore;
-
 export function getDemoStore(): DemoStore {
-  return store;
+  return demoStore();
 }
 
 export function resetDemoStore(): DemoStore {
-  store = createSeedStore();
-  globalForDemo.__averoDemoStore = store;
-  return store;
+  globalForDemo.__averoDemoStore = createSeedStore();
+  return globalForDemo.__averoDemoStore;
 }
 
 export function createIncident(input: {
@@ -278,7 +278,7 @@ export function createIncident(input: {
     created_at: nowIso(),
     resolved_at: null,
   };
-  store.incidents.push(incident);
+  demoStore().incidents.push(incident);
   return incident;
 }
 
@@ -287,7 +287,7 @@ export function updateIncidentStatus(
   status: IncidentStatus,
   resolvedAt?: string | null
 ): Incident | null {
-  const incident = store.incidents.find((i) => i.id === incidentId);
+  const incident = demoStore().incidents.find((i) => i.id === incidentId);
   if (!incident) return null;
   incident.status = status;
   if (resolvedAt !== undefined) incident.resolved_at = resolvedAt;
@@ -298,7 +298,7 @@ export function updateIncidentStatus(
 }
 
 export function getIncident(incidentId: string): Incident | undefined {
-  return store.incidents.find((i) => i.id === incidentId);
+  return demoStore().incidents.find((i) => i.id === incidentId);
 }
 
 export function createMessage(input: {
@@ -315,12 +315,12 @@ export function createMessage(input: {
     metadata: input.metadata ?? {},
     created_at: nowIso(),
   };
-  store.messages.push(message);
+  demoStore().messages.push(message);
   return message;
 }
 
 export function listMessages(incidentId: string): IncidentMessage[] {
-  return store.messages
+  return demoStore().messages
     .filter((m) => m.incident_id === incidentId)
     .sort((a, b) => a.created_at.localeCompare(b.created_at));
 }
@@ -333,7 +333,7 @@ export function createSafetyAssessment(
     id: newId(),
     created_at: nowIso(),
   };
-  store.safetyAssessments.push(row);
+  demoStore().safetyAssessments.push(row);
   return row;
 }
 
@@ -345,14 +345,14 @@ export function createTriageDecision(
     id: newId(),
     created_at: nowIso(),
   };
-  store.triageDecisions.push(row);
+  demoStore().triageDecisions.push(row);
   return row;
 }
 
 export function getLatestTriageDecision(
   incidentId: string
 ): TriageDecisionRow | undefined {
-  return store.triageDecisions
+  return demoStore().triageDecisions
     .filter((d) => d.incident_id === incidentId)
     .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
 }
@@ -379,7 +379,7 @@ export function createDiyPlan(input: {
     safety_notes: input.safety_notes,
     created_at: nowIso(),
   };
-  store.diyPlans.push(plan);
+  demoStore().diyPlans.push(plan);
   const steps = input.steps.map((s) => {
     const step: DiyStepRow = {
       id: newId(),
@@ -389,7 +389,7 @@ export function createDiyPlan(input: {
       success_check: s.success_check,
       failure_action: s.failure_action,
     };
-    store.diySteps.push(step);
+    demoStore().diySteps.push(step);
     return step;
   });
   return { plan, steps };
@@ -399,11 +399,11 @@ export function getDiyPlanForIncident(incidentId: string): {
   plan: DiyPlanRow;
   steps: DiyStepRow[];
 } | null {
-  const plan = store.diyPlans
+  const plan = demoStore().diyPlans
     .filter((p) => p.incident_id === incidentId)
     .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
   if (!plan) return null;
-  const steps = store.diySteps
+  const steps = demoStore().diySteps
     .filter((s) => s.plan_id === plan.id)
     .sort((a, b) => a.step_order - b.step_order);
   return { plan, steps };
@@ -420,16 +420,16 @@ export function createServiceRequest(
     status: input.status ?? "OPEN",
     created_at: nowIso(),
   };
-  store.serviceRequests.push(row);
+  demoStore().serviceRequests.push(row);
   return row;
 }
 
 export function getServiceRequest(id: string): ServiceRequestRow | undefined {
-  return store.serviceRequests.find((r) => r.id === id);
+  return demoStore().serviceRequests.find((r) => r.id === id);
 }
 
 export function listOpenServiceRequests(): ServiceRequestRow[] {
-  return store.serviceRequests
+  return demoStore().serviceRequests
     .filter((r) => r.status === "OPEN" || r.status === "OFFERS_RECEIVED")
     .sort((a, b) => b.created_at.localeCompare(a.created_at));
 }
@@ -438,7 +438,7 @@ export function listProviders(opts?: {
   trade?: string;
   area?: string;
 }): Array<Provider & { coverage_areas: string[] }> {
-  let list = [...store.providers];
+  let list = [...demoStore().providers];
   if (opts?.trade) {
     const trade = opts.trade;
     list = list.filter(
@@ -450,7 +450,7 @@ export function listProviders(opts?: {
   }
   return list
     .map((p) => {
-      const coverage_areas = store.providerCoverage
+      const coverage_areas = demoStore().providerCoverage
         .filter((c) => c.provider_id === p.id)
         .map((c) => c.area);
       return { ...p, coverage_areas };
@@ -459,7 +459,7 @@ export function listProviders(opts?: {
 }
 
 export function getProvider(id: string): Provider | undefined {
-  return store.providers.find((p) => p.id === id);
+  return demoStore().providers.find((p) => p.id === id);
 }
 
 export function createOffer(
@@ -475,20 +475,20 @@ export function createOffer(
     is_demo: input.is_demo ?? false,
     created_at: nowIso(),
   };
-  store.offers.push(offer);
-  const sr = store.serviceRequests.find((r) => r.id === offer.service_request_id);
+  demoStore().offers.push(offer);
+  const sr = demoStore().serviceRequests.find((r) => r.id === offer.service_request_id);
   if (sr && sr.status === "OPEN") sr.status = "OFFERS_RECEIVED";
   return offer;
 }
 
 export function listOffers(serviceRequestId: string): Offer[] {
-  return store.offers
+  return demoStore().offers
     .filter((o) => o.service_request_id === serviceRequestId)
     .sort((a, b) => a.created_at.localeCompare(b.created_at));
 }
 
 export function getOffer(id: string): Offer | undefined {
-  return store.offers.find((o) => o.id === id);
+  return demoStore().offers.find((o) => o.id === id);
 }
 
 export function loadDemoOffers(serviceRequestId: string): Offer[] {
@@ -567,7 +567,7 @@ export function loadDemoOffers(serviceRequestId: string): Offer[] {
   // Ensure at least 2 demo offers even if coverage is sparse
   while (created.length < 2) {
     const fallback =
-      store.providers.find((p) => p.trade === trade) ?? store.providers[0]!;
+      demoStore().providers.find((p) => p.trade === trade) ?? demoStore().providers[0]!;
     if (existing.has(fallback.id) && created.some((c) => c.provider_id === fallback.id)) {
       break;
     }
@@ -612,7 +612,7 @@ export function createBooking(input: {
     created_at: nowIso(),
     updated_at: nowIso(),
   };
-  store.bookings.push(booking);
+  demoStore().bookings.push(booking);
 
   const offer = getOffer(input.offer_id);
   if (offer) offer.status = "ACCEPTED";
@@ -633,13 +633,13 @@ export function createBooking(input: {
     created_at: nowIso(),
     updated_at: nowIso(),
   };
-  store.payments.push(payment);
+  demoStore().payments.push(payment);
 
   return { booking, payment };
 }
 
 export function getBooking(id: string): Booking | undefined {
-  return store.bookings.find((b) => b.id === id);
+  return demoStore().bookings.find((b) => b.id === id);
 }
 
 export function updateBookingStatus(
@@ -654,7 +654,7 @@ export function updateBookingStatus(
 }
 
 export function getPaymentForBooking(bookingId: string): Payment | undefined {
-  return store.payments.find((p) => p.booking_id === bookingId);
+  return demoStore().payments.find((p) => p.booking_id === bookingId);
 }
 
 export function updatePaymentState(
@@ -676,22 +676,22 @@ export function createRepairRecord(
     id: newId(),
     created_at: nowIso(),
   };
-  store.repairRecords.push(row);
+  demoStore().repairRecords.push(row);
   return row;
 }
 
 export function listRepairHistory(homeId: string = DEMO_HOME_ID): RepairRecord[] {
-  return store.repairRecords
+  return demoStore().repairRecords
     .filter((r) => r.home_id === homeId)
     .sort((a, b) => b.completed_at.localeCompare(a.completed_at));
 }
 
 export function getHome(homeId: string = DEMO_HOME_ID): Home | undefined {
-  return store.homes.find((h) => h.id === homeId);
+  return demoStore().homes.find((h) => h.id === homeId);
 }
 
 export function getHomeAssets(homeId: string = DEMO_HOME_ID): HomeAsset[] {
-  return store.homeAssets.filter((a) => a.home_id === homeId);
+  return demoStore().homeAssets.filter((a) => a.home_id === homeId);
 }
 
 export function createReview(input: {
@@ -706,7 +706,7 @@ export function createReview(input: {
     comment: input.comment ?? null,
     created_at: nowIso(),
   };
-  store.reviews.push(row);
+  demoStore().reviews.push(row);
   return row;
 }
 
@@ -721,15 +721,15 @@ export function getStore(): DemoStore & {
   decisions: TriageDecisionRow[];
 } {
   return {
-    ...store,
+    ...demoStore(),
     get repairs() {
-      return store.repairRecords;
+      return demoStore().repairRecords;
     },
     get safety() {
-      return store.safetyAssessments;
+      return demoStore().safetyAssessments;
     },
     get decisions() {
-      return store.triageDecisions;
+      return demoStore().triageDecisions;
     },
   };
 }
@@ -739,7 +739,7 @@ export function getPaymentByBooking(bookingId: string): Payment | undefined {
 }
 
 export function getRepair(id: string): RepairRecord | undefined {
-  return store.repairRecords.find((r) => r.id === id);
+  return demoStore().repairRecords.find((r) => r.id === id);
 }
 
 export function listRepairs(homeId: string = DEMO_HOME_ID): RepairRecord[] {
