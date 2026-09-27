@@ -27,77 +27,88 @@ type OfferRow = {
 export function OfferComparison({ incidentId }: { incidentId: string }) {
   const router = useRouter();
   const params = useSearchParams();
-  const [srId, setSrId] = useState(params.get("sr") || "");
+  const urlSr = params.get("sr") || "";
+  const [srId, setSrId] = useState(urlSr);
   const [offers, setOffers] = useState<OfferRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [bookingId, setBookingId] = useState<string | null>(null);
   const [bookError, setBookError] = useState<string | null>(null);
 
-  const load = useCallback(async (id: string) => {
-    const res = await fetch(`/api/service-requests/${id}/offers`);
+  const ensureOffers = useCallback(async (serviceRequestId: string) => {
+    await fetch("/api/demo/offers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ service_request_id: serviceRequestId }),
+    });
+    const res = await fetch(`/api/service-requests/${serviceRequestId}/offers`);
     const json = await res.json();
-    if (json.ok) setOffers(json.data.offers);
+    if (!json.ok) {
+      throw new Error(json.error?.message || "Could not load offers");
+    }
+    return json.data.offers as OfferRow[];
   }, []);
 
   useEffect(() => {
     let cancelled = false;
+
     async function boot() {
       setLoading(true);
-      let id = srId;
-      if (!id) {
-        const res = await fetch(`/api/incidents/${incidentId}/service-request`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({}),
-        });
-        const json = await res.json();
-        if (json.ok) {
-          id = json.data.serviceRequest.id;
-          if (!cancelled) setSrId(id);
+      setLoadError(null);
+
+      try {
+        let id = urlSr;
+
+        // Validate existing SR; recreate if missing/stale after demo store reset
+        if (id) {
+          const check = await fetch(`/api/service-requests/${id}/offers`).then((r) =>
+            r.json()
+          );
+          if (!check.ok) id = "";
         }
+
+        if (!id) {
+          const res = await fetch(`/api/incidents/${incidentId}/service-request`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}),
+          });
+          const json = await res.json();
+          if (!json.ok) {
+            throw new Error(
+              json.error?.message ||
+                "Could not create a service request. Try reporting again."
+            );
+          }
+          id = json.data.serviceRequest.id as string;
+        }
+
+        if (cancelled) return;
+        setSrId(id);
+
+        const rows = await ensureOffers(id);
+        if (cancelled) return;
+        setOffers(rows);
+        if (!rows.length) {
+          setLoadError("No offers matched yet. Try again in a moment.");
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setOffers([]);
+          setLoadError(
+            e instanceof Error ? e.message : "Could not load offers."
+          );
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      if (!id || cancelled) {
-        setLoading(false);
-        return;
-      }
-      await load(id);
-      // Auto-load demo offers quickly for smooth demos
-      await new Promise((r) => setTimeout(r, 2500));
-      if (cancelled) return;
-      const current = await fetch(`/api/service-requests/${id}/offers`).then((r) =>
-        r.json()
-      );
-      if (cancelled) return;
-      if (current.ok && current.data.offers.length === 0) {
-        await fetch("/api/demo/offers", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ service_request_id: id }),
-        });
-        await load(id);
-      } else if (current.ok) {
-        setOffers(current.data.offers);
-      }
-      if (!cancelled) setLoading(false);
     }
+
     void boot();
     return () => {
       cancelled = true;
     };
-  }, [incidentId, srId, load]);
-
-  async function loadDemo() {
-    if (!srId) return;
-    setLoading(true);
-    setBookError(null);
-    await fetch("/api/demo/offers", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ service_request_id: srId }),
-    });
-    await load(srId);
-    setLoading(false);
-  }
+  }, [incidentId, urlSr, ensureOffers]);
 
   async function book(preferredOfferId: string) {
     setBookError(null);
@@ -113,8 +124,6 @@ export function OfferComparison({ incidentId }: { incidentId: string }) {
         return res.json();
       }
 
-      // Always re-anchor to a live service request + offers before booking.
-      // Client offer IDs go stale when the demo in-memory store resets (dev restart / HMR).
       let id = srId;
       const srRes = await fetch(`/api/incidents/${incidentId}/service-request`, {
         method: "POST",
@@ -133,18 +142,9 @@ export function OfferComparison({ incidentId }: { incidentId: string }) {
         return;
       }
 
-      await fetch("/api/demo/offers", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ service_request_id: id }),
-      });
-
-      const refreshed = await fetch(`/api/service-requests/${id}/offers`).then((r) =>
-        r.json()
-      );
-      const rows = (refreshed.ok ? refreshed.data.offers : []) as OfferRow[];
+      const rows = await ensureOffers(id);
       if (!rows.length) {
-        setBookError("No live offers yet. Tap Reload demo offers, then book again.");
+        setBookError("No offers available right now. Try again.");
         return;
       }
       setOffers(rows);
@@ -159,9 +159,7 @@ export function OfferComparison({ incidentId }: { incidentId: string }) {
         router.push(`/booking/${json.data.booking.id}`);
         return;
       }
-      setBookError(
-        json.error?.message || "Could not book this offer. Try Reload demo offers."
-      );
+      setBookError(json.error?.message || "Could not book this offer.");
     } catch {
       setBookError("Could not book this offer. Check your connection and try again.");
     } finally {
@@ -174,18 +172,19 @@ export function OfferComparison({ incidentId }: { incidentId: string }) {
   return (
     <div className="space-y-4">
       <DemoProgress current="book" branch="TECHNICIAN" />
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-[var(--avero-muted)]">
-          Compare offers, then book one. Demo quotes load automatically.
-        </p>
-        <Button variant="outline" size="sm" onClick={loadDemo} disabled={loading || !srId}>
-          Reload demo offers
-        </Button>
-      </div>
+      <p className="text-sm text-[var(--avero-muted)]">
+        Compare offers, then book one.
+      </p>
 
       {loading && offers.length === 0 && (
         <p className="rounded-md border border-[var(--avero-line)] bg-[var(--avero-panel)] p-4 text-sm text-[var(--avero-teal)]">
-          Matching Islamabad providers and loading demo offers…
+          Matching Islamabad providers…
+        </p>
+      )}
+
+      {loadError && (
+        <p className="rounded-md border border-[var(--avero-danger)]/40 bg-red-50 px-3 py-2 text-sm text-[var(--avero-danger)]">
+          {loadError}
         </p>
       )}
 
@@ -197,7 +196,7 @@ export function OfferComparison({ incidentId }: { incidentId: string }) {
 
       {recommended && (
         <div className="rounded-lg border border-[var(--avero-teal)] bg-[var(--avero-teal)]/5 p-4">
-          <p className="text-sm font-medium">Recommended for the demo</p>
+          <p className="text-sm font-medium">Recommended</p>
           <p className="mt-1 text-lg font-semibold">
             {recommended.provider?.name} · PKR{" "}
             {recommended.offer.estimated_total_min ?? "—"}
@@ -226,7 +225,6 @@ export function OfferComparison({ incidentId }: { incidentId: string }) {
                   <p className="text-sm text-[var(--avero-muted)]">
                     Rating {row.provider?.rating ?? "—"}
                     {row.provider?.verified ? " · Verified" : ""}
-                    {o.is_demo ? " · Demo offer" : ""}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-1">

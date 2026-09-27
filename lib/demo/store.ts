@@ -567,27 +567,35 @@ export function loadDemoOffers(serviceRequestId: string): Offer[] {
   // Ensure at least 2 demo offers even if coverage is sparse
   while (created.length < 2) {
     const fallback =
-      demoStore().providers.find((p) => p.trade === trade) ?? demoStore().providers[0]!;
-    if (existing.has(fallback.id) && created.some((c) => c.provider_id === fallback.id)) {
+      demoStore().providers.find(
+        (p) => p.trade === trade && !created.some((c) => c.provider_id === p.id)
+      ) ??
+      demoStore().providers.find((p) => !created.some((c) => c.provider_id === p.id)) ??
+      demoStore().providers[0];
+    if (!fallback) break;
+    if (
+      existing.has(fallback.id) &&
+      created.some((c) => c.provider_id === fallback.id)
+    ) {
       break;
     }
     const t = templates[created.length % templates.length]!;
     const arrival = new Date();
     arrival.setHours(arrival.getHours() + t.hours + created.length);
-    created.push(
-      createOffer({
-        service_request_id: serviceRequestId,
-        provider_id: fallback.id,
-        visit_fee: t.visit_fee,
-        estimated_total_min: t.estimated_total_min,
-        estimated_total_max: t.estimated_total_max,
-        earliest_arrival: arrival.toISOString(),
-        warranty_days: t.warranty_days,
-        parts_included: t.parts_included,
-        notes: t.notes,
-        is_demo: true,
-      })
-    );
+    const row = createOffer({
+      service_request_id: serviceRequestId,
+      provider_id: fallback.id,
+      visit_fee: t.visit_fee,
+      estimated_total_min: t.estimated_total_min,
+      estimated_total_max: t.estimated_total_max,
+      earliest_arrival: arrival.toISOString(),
+      warranty_days: t.warranty_days,
+      parts_included: t.parts_included,
+      notes: t.notes,
+      is_demo: true,
+    });
+    created.push(row);
+    existing.add(fallback.id);
   }
 
   return listOffers(serviceRequestId);

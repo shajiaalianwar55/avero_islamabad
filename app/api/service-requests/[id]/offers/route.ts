@@ -1,10 +1,26 @@
 import { ok, fail } from "@/lib/api";
 import { getServiceRequest } from "@/lib/db/incidents";
-import { getProvider, listOffers } from "@/lib/db/providers";
+import {
+  getProvider,
+  listOffers,
+  listProviders,
+  type ProviderWithCoverage,
+} from "@/lib/db/providers";
 import { rankOffers } from "@/lib/scoring/offers";
-import { normalizeOffer } from "@/lib/ai/offer-normalizer";
+import { fallbackNormalizeOffer } from "@/lib/ai/offer-normalizer";
+import type { Offer, Provider } from "@/types/db";
+import type { NormalizedOffer } from "@/types";
 
 type RouteContext = { params: Promise<{ id: string }> };
+
+type ScoredInput = {
+  offer: Offer;
+  provider: Provider;
+  requestCategory: string;
+  requestArea: string;
+  providerAreas: string[];
+  normalized: NormalizedOffer;
+};
 
 export async function GET(_request: Request, context: RouteContext) {
   const { id } = await context.params;
@@ -15,53 +31,50 @@ export async function GET(_request: Request, context: RouteContext) {
 
   try {
     const offers = await listOffers(id);
-    const { listProviders } = await import("@/lib/db/providers");
-    type ScoredInput = {
-      offer: (typeof offers)[number];
-      provider: NonNullable<Awaited<ReturnType<typeof getProvider>>>;
-      requestCategory: string;
-      requestArea: string;
-      providerAreas: string[];
-      normalized: Awaited<ReturnType<typeof normalizeOffer>>;
-    };
+    const providers: ProviderWithCoverage[] = await listProviders({
+      trade: serviceRequest.category,
+      area: serviceRequest.area,
+    });
+
     const scoredInputs: ScoredInput[] = [];
-
     for (const offer of offers) {
-      const provider = await getProvider(offer.provider_id);
+      const provider =
+        (await getProvider(offer.provider_id)) ??
+        providers.find((p) => p.id === offer.provider_id) ??
+        null;
       if (!provider) continue;
-      const normalized = await normalizeOffer({
-        provider_id: offer.provider_id,
-        service_request_id: offer.service_request_id,
-        visit_fee: offer.visit_fee,
-        estimated_total_min: offer.estimated_total_min,
-        estimated_total_max: offer.estimated_total_max,
-        earliest_arrival: offer.earliest_arrival,
-        warranty_days: offer.warranty_days,
-        parts_included: offer.parts_included,
-        notes: offer.notes,
-      });
 
-      const withCoverage = await listProviders({ trade: provider.trade });
-      const match = withCoverage.find((p) => p.id === provider.id);
-
+      const match = providers.find((p) => p.id === provider.id);
       scoredInputs.push({
         offer,
         provider,
         requestCategory: serviceRequest.category,
         requestArea: serviceRequest.area,
         providerAreas: match?.coverage_areas ?? [],
-        normalized,
+        normalized: fallbackNormalizeOffer({
+          provider_id: offer.provider_id,
+          service_request_id: offer.service_request_id,
+          visit_fee: offer.visit_fee,
+          estimated_total_min: offer.estimated_total_min,
+          estimated_total_max: offer.estimated_total_max,
+          earliest_arrival: offer.earliest_arrival,
+          warranty_days: offer.warranty_days,
+          parts_included: offer.parts_included,
+          notes: offer.notes,
+        }),
       });
     }
 
     const ranked = rankOffers(
-      scoredInputs.map(({ offer, provider, requestCategory, requestArea, providerAreas }) => ({
-        offer,
-        provider,
-        requestCategory,
-        requestArea,
-        providerAreas,
-      }))
+      scoredInputs.map(
+        ({ offer, provider, requestCategory, requestArea, providerAreas }) => ({
+          offer,
+          provider,
+          requestCategory,
+          requestArea,
+          providerAreas,
+        })
+      )
     ).map((s) => {
       const extra = scoredInputs.find((i) => i.offer.id === s.offer.id);
       return {
