@@ -19,19 +19,22 @@ import {
 } from "@/lib/demo/appliance-flows";
 import {
   answerAndContinue,
-  createSession,
+  createSessionFromIntake,
   nextStep,
+  parseSymptomIntake,
   resolveKnowledgeBase,
+  symptomShortcutsForAppliance,
   type DiagnosticKnowledgeBase,
   type DiagnosticQuestion,
   type DiagnosticResult,
   type DiagnosticSession,
   type PathOutcome,
+  type SymptomShortcut,
 } from "@/lib/diagnostics";
 import { buildEmergencyCopy } from "@/lib/diagnostics/emergency-copy";
 import { EmergencyDecisionPanel } from "@/components/safety/emergency-decision-panel";
 
-type Phase = "report" | "appliance" | "questions" | "decision" | "diy";
+type Phase = "report" | "appliance" | "symptom" | "questions" | "decision" | "diy";
 
 export function GuidedIncidentFlow() {
   const router = useRouter();
@@ -54,6 +57,8 @@ export function GuidedIncidentFlow() {
   const [diyStep, setDiyStep] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [symptomText, setSymptomText] = useState("");
+  const [symptomShortcut, setSymptomShortcut] = useState<string | undefined>();
 
   const diySteps = result?.diySteps ?? [];
   const answerRows =
@@ -66,15 +71,17 @@ export function GuidedIncidentFlow() {
       ? "report"
       : phase === "appliance"
         ? "appliance"
-        : phase === "questions"
-          ? "questions"
-          : phase === "decision"
-            ? outcome === "EMERGENCY"
-              ? "emergency"
-              : "decision"
-            : phase === "diy"
-              ? "diy"
-              : "decision";
+        : phase === "symptom"
+          ? "problem"
+          : phase === "questions"
+            ? "diagnose"
+            : phase === "decision"
+              ? outcome === "EMERGENCY"
+                ? "emergency"
+                : "decision"
+              : phase === "diy"
+                ? "diy"
+                : "decision";
 
   const progressBranch =
     outcome === "EMERGENCY"
@@ -94,21 +101,55 @@ export function GuidedIncidentFlow() {
     );
   }
 
-  function beginDiagnostics(a: ApplianceDef) {
-    const knowledge = resolveKnowledgeBase({
-      applianceId: a.id,
-      category: a.category,
-      nameHint: `${a.brand} ${a.name}`,
-    });
-    const sess = createSession(knowledge);
-    const step = nextStep(knowledge, sess);
+  function selectAppliance(a: ApplianceDef) {
     setAppliance(a);
-    setKb(knowledge);
+    setSymptomText("");
+    setSymptomShortcut(undefined);
+    setKb(null);
+    setSession(null);
+    setCurrentQuestion(null);
     setResult(null);
     setOutcome(null);
-    setDiyStep(0);
     setError(null);
+    setPhase("symptom");
+  }
 
+  function beginDiagnosticsFromSymptom() {
+    if (!appliance) return;
+    const intake = parseSymptomIntake({
+      applianceId: appliance.id,
+      text: symptomText,
+      shortcutId: symptomShortcut,
+    });
+    if (!symptomText.trim() && !symptomShortcut) {
+      setError("Tell us what’s happening, or pick a symptom.");
+      return;
+    }
+
+    const knowledge = resolveKnowledgeBase({
+      applianceId: appliance.id,
+      category: appliance.category,
+      nameHint: `${appliance.brand} ${appliance.name}`,
+    });
+    const sess = createSessionFromIntake(knowledge, intake);
+    setKb(knowledge);
+    setError(null);
+    setDiyStep(0);
+
+    // Immediate safety gate from reported symptoms
+    if (sess.safety.emergency) {
+      const emergencyResult = nextStep(knowledge, sess);
+      if (emergencyResult.stopped) {
+        setSession(sess);
+        setCurrentQuestion(null);
+        setResult(emergencyResult);
+        setOutcome("EMERGENCY");
+        setPhase("decision");
+        return;
+      }
+    }
+
+    const step = nextStep(knowledge, sess);
     if (step.stopped) {
       setSession(sess);
       setCurrentQuestion(null);
@@ -120,10 +161,6 @@ export function GuidedIncidentFlow() {
     setSession(step.session);
     setCurrentQuestion(step.question);
     setPhase("questions");
-  }
-
-  function selectAppliance(a: ApplianceDef) {
-    beginDiagnostics(a);
   }
 
   function addCustomAppliance() {
@@ -475,6 +512,58 @@ export function GuidedIncidentFlow() {
         </div>
       )}
 
+      {phase === "symptom" && appliance && (
+        <div className="space-y-4">
+          <div>
+            <h2 className="font-[family-name:var(--font-display)] text-2xl">
+              What&apos;s happening with your {appliance.name.toLowerCase()}?
+            </h2>
+            <p className="mt-1 text-sm text-[var(--avero-muted)]">
+              {appliance.brand} · Bought {appliance.yearBought}. Describe the problem in your own
+              words, or tap a shortcut.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {symptomShortcutsForAppliance(appliance.id).map((s: SymptomShortcut) => (
+              <Button
+                key={s.id}
+                type="button"
+                size="sm"
+                variant={symptomShortcut === s.id ? "default" : "secondary"}
+                onClick={() => {
+                  setSymptomShortcut(s.id);
+                  if (!symptomText.trim()) setSymptomText(s.label);
+                }}
+              >
+                {s.label}
+              </Button>
+            ))}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="symptom">Describe what you notice</Label>
+            <Textarea
+              id="symptom"
+              value={symptomText}
+              onChange={(e) => setSymptomText(e.target.value)}
+              placeholder={
+                appliance.id === "radiator"
+                  ? "e.g. It stays cold even on high, no burning smell…"
+                  : "e.g. Water under the cabinet when I run the tap…"
+              }
+            />
+          </div>
+          {error && <p className="text-sm text-[var(--avero-danger)]">{error}</p>}
+          <div className="flex flex-wrap gap-2">
+            <Button size="lg" type="button" onClick={beginDiagnosticsFromSymptom}>
+              Continue to diagnosis →
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setPhase("appliance")}>
+              Back
+            </Button>
+          </div>
+        </div>
+      )}
+
       {phase === "questions" && appliance && currentQuestion && (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
@@ -482,10 +571,10 @@ export function GuidedIncidentFlow() {
               {appliance.icon} {applianceLabel(appliance)}
             </Badge>
             <Badge variant="outline">{kb?.title}</Badge>
-            <Badge>Question {askedCount + 1}</Badge>
+            <Badge>Diagnose · Q{askedCount + 1}</Badge>
           </div>
           <p className="text-xs text-[var(--avero-muted)]">
-            Questions adapt as answers narrow possibilities — not a fixed quiz length.
+            Next question is chosen from your reported problem — not a fixed script.
           </p>
           <Card>
             <CardHeader>
@@ -505,8 +594,8 @@ export function GuidedIncidentFlow() {
               ))}
             </CardContent>
           </Card>
-          <Button type="button" variant="outline" onClick={() => setPhase("appliance")}>
-            Back to appliances
+          <Button type="button" variant="outline" onClick={() => setPhase("symptom")}>
+            Back
           </Button>
         </div>
       )}

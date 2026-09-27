@@ -251,6 +251,7 @@ const questions: DiagnosticQuestion[] = [
   // —— Opening / type ——
   {
     id: "rad_type",
+    tags: ["type"],
     prompt: "What kind of radiator is this?",
     priority: 1,
     options: [
@@ -285,6 +286,7 @@ const questions: DiagnosticQuestion[] = [
   },
   {
     id: "rad_main_symptom",
+    tags: ["symptom_repeat"],
     prompt: "What is the main problem you notice?",
     priority: 1,
     options: [
@@ -331,6 +333,7 @@ const questions: DiagnosticQuestion[] = [
   },
   {
     id: "rad_safety_smell",
+    tags: ["safety_burn"],
     prompt: "Do you smell burning plastic, burning oil, or see smoke / scorch marks?",
     priority: 1,
     options: [
@@ -359,6 +362,7 @@ const questions: DiagnosticQuestion[] = [
   },
   {
     id: "rad_safety_sparks",
+    tags: ["safety_spark"],
     prompt: "Any sparks, buzzing from the plug, or a hot / discoloured plug?",
     priority: 1,
     options: [
@@ -385,6 +389,7 @@ const questions: DiagnosticQuestion[] = [
   },
   {
     id: "rad_water_near_power",
+    tags: ["safety_wet"],
     prompt: "Is there water or oily liquid on the plug, cord, or wall socket?",
     priority: 2,
     options: [
@@ -411,6 +416,7 @@ const questions: DiagnosticQuestion[] = [
   // —— Electric portable branch ——
   {
     id: "rad_power_light",
+    tags: ["power","heat"],
     prompt: "When you try to turn it on, does any light or display come on?",
     priority: 2,
     conditions: {
@@ -441,6 +447,7 @@ const questions: DiagnosticQuestion[] = [
   },
   {
     id: "rad_socket_test",
+    tags: ["power"],
     prompt: "Does the same wall socket work with something else (phone charger or lamp)?",
     priority: 3,
     conditions: {
@@ -466,6 +473,7 @@ const questions: DiagnosticQuestion[] = [
   },
   {
     id: "rad_plug_seated",
+    tags: ["power"],
     prompt: "Is the radiator's plug fully pushed into the wall, and is its own switch ON?",
     priority: 3,
     conditions: {
@@ -488,6 +496,7 @@ const questions: DiagnosticQuestion[] = [
   },
   {
     id: "rad_upright",
+    tags: ["power"],
     prompt: "Is the radiator standing upright on a flat floor (not leaning or on thick carpet edges)?",
     priority: 3,
     conditions: {
@@ -507,6 +516,7 @@ const questions: DiagnosticQuestion[] = [
   },
   {
     id: "rad_thermostat_position",
+    tags: ["heat"],
     prompt: "Where is the thermostat / temperature dial set?",
     priority: 3,
     conditions: {
@@ -542,6 +552,7 @@ const questions: DiagnosticQuestion[] = [
   },
   {
     id: "rad_timer_mode",
+    tags: ["heat"],
     prompt: "Is a timer, eco, or night mode enabled that might keep it off right now?",
     priority: 4,
     conditions: {
@@ -562,6 +573,7 @@ const questions: DiagnosticQuestion[] = [
   },
   {
     id: "rad_waited",
+    tags: ["heat"],
     prompt: "Have you left it switched on for at least 10–15 minutes?",
     priority: 3,
     conditions: {
@@ -593,6 +605,7 @@ const questions: DiagnosticQuestion[] = [
   },
   {
     id: "rad_covered",
+    tags: ["heat"],
     prompt: "Is anything covering the radiator (clothes, towel, blanket) or pushed tight against curtains?",
     priority: 4,
     conditions: {
@@ -613,6 +626,7 @@ const questions: DiagnosticQuestion[] = [
   },
   {
     id: "rad_dust",
+    tags: ["heat"],
     prompt: "Do the fins / gaps look thick with dust or fluff?",
     priority: 5,
     conditions: {
@@ -633,6 +647,7 @@ const questions: DiagnosticQuestion[] = [
   },
   {
     id: "rad_room_size",
+    tags: ["heat"],
     prompt: "Is this a large room, or very cold / drafty (open windows, thin walls)?",
     priority: 5,
     conditions: {
@@ -654,6 +669,7 @@ const questions: DiagnosticQuestion[] = [
   },
   {
     id: "rad_partial_heat",
+    tags: ["heat"],
     prompt: "If it warms at all: is only part of the radiator hot, or the whole surface?",
     priority: 5,
     conditions: {
@@ -683,6 +699,7 @@ const questions: DiagnosticQuestion[] = [
   },
   {
     id: "rad_oil_spots",
+    tags: ["leak"],
     prompt: "Are there oily spots or stains on the floor under the radiator?",
     priority: 2,
     conditions: {
@@ -715,6 +732,7 @@ const questions: DiagnosticQuestion[] = [
   },
   {
     id: "rad_oil_spots_general",
+    tags: ["leak"],
     prompt: "Any oily residue under a portable oil-filled radiator?",
     priority: 6,
     conditions: {
@@ -743,6 +761,7 @@ const questions: DiagnosticQuestion[] = [
   },
   {
     id: "rad_cord_condition",
+    tags: ["power","safety_spark"],
     prompt: "Does the power cord look frayed, kinked sharply, or recently damaged?",
     priority: 5,
     conditions: {
@@ -772,6 +791,7 @@ const questions: DiagnosticQuestion[] = [
   },
   {
     id: "rad_worked_before",
+    tags: ["heat"],
     prompt: "Did this same radiator heat the room normally earlier this season?",
     priority: 6,
     conditions: {
@@ -797,6 +817,7 @@ const questions: DiagnosticQuestion[] = [
   // —— Hydronic / plumbed branch ——
   {
     id: "rad_hydronic_valve",
+    tags: ["type","heat"],
     prompt: "Is there a valve on the side of the radiator, and is it open?",
     priority: 2,
     conditions: {
@@ -822,6 +843,7 @@ const questions: DiagnosticQuestion[] = [
   },
   {
     id: "rad_hydronic_pattern",
+    tags: ["heat"],
     prompt: "On the plumbed radiator: is the bottom warmer than the top?",
     priority: 3,
     conditions: {
@@ -849,6 +871,7 @@ const questions: DiagnosticQuestion[] = [
   },
   {
     id: "rad_other_rads",
+    tags: ["heat"],
     prompt: "Are other radiators / heated towel rails in the home working?",
     priority: 3,
     conditions: {
@@ -875,6 +898,7 @@ const questions: DiagnosticQuestion[] = [
   },
   {
     id: "rad_water_leak_floor",
+    tags: ["leak","safety_wet"],
     prompt: "Is there water on the floor near the radiator or its pipes?",
     priority: 2,
     conditions: {
@@ -912,6 +936,7 @@ const questions: DiagnosticQuestion[] = [
   },
   {
     id: "rad_hiss_gurgle",
+    tags: ["noise"],
     prompt: "Do you hear hissing, gurgling, or bubbling from the radiator?",
     priority: 4,
     conditions: {
@@ -933,6 +958,7 @@ const questions: DiagnosticQuestion[] = [
   // —— Closing differentiators ——
   {
     id: "rad_after_basic_checks",
+    tags: ["heat","power"],
     prompt: "After checking power/valve basics, does it still feel completely dead?",
     priority: 7,
     conditions: {
@@ -962,6 +988,7 @@ const questions: DiagnosticQuestion[] = [
   },
   {
     id: "rad_comfort_diy",
+    tags: ["heat"],
     prompt: "Are you comfortable trying simple checks (plug, dial, clear space) yourself?",
     priority: 8,
     conditions: {

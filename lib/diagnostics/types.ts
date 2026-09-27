@@ -84,6 +84,11 @@ export type DiagnosticQuestion = {
   /** Prefer asking earlier when multiple questions tie (lower = earlier) */
   priority?: number;
   conditions?: QuestionCondition;
+  /**
+   * Topic tags for intake-aware selection (e.g. heat, power, safety_burn).
+   * Used to prefer symptom-relevant questions and suppress irrelevant hazard Qs.
+   */
+  tags?: string[];
 };
 
 export type DiagnosticKnowledgeBase = {
@@ -127,6 +132,24 @@ export const DEFAULT_ENGINE_CONFIG: EngineConfig = {
   minQuestionsForConfidence: 4,
 };
 
+/** Structured symptom report from the Problem intake stage. */
+export type SymptomIntake = {
+  family: string;
+  rawText: string;
+  shortcutId?: string;
+  safety: {
+    emergency: boolean;
+    caution: boolean;
+    reason?: string;
+  };
+  /** Applied to hypothesis scores before any diagnostic question */
+  hypothesisBoosts: Record<HypothesisId, number>;
+  /** Prefer questions carrying these tags */
+  preferredTags: string[];
+  /** Skip questions with these tags unless hazard hyps become active */
+  suppressedTags: string[];
+};
+
 export type AnswerRecord = {
   questionId: QuestionId;
   optionId: OptionId;
@@ -146,6 +169,8 @@ export type DiagnosticSession = {
     reasons: string[];
   };
   config: EngineConfig;
+  /** Set after Problem intake — drives first-question selection */
+  intake?: SymptomIntake;
 };
 
 export type StopReason =

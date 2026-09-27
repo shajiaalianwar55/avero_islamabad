@@ -13,6 +13,7 @@ import {
   type PathOutcome,
   type QuestionCondition,
   type StepResult,
+  type SymptomIntake,
 } from "./types";
 
 function cloneScores(scores: Record<string, number>) {
@@ -41,6 +42,84 @@ export function createSession(
     safety: { emergency: false, caution: false, reasons: [] },
     config,
   };
+}
+
+/** Seed scores + safety from Problem intake — appliance alone does not pick questions. */
+export function createSessionFromIntake(
+  kb: DiagnosticKnowledgeBase,
+  intake: SymptomIntake,
+  configOverrides?: Partial<EngineConfig>
+): DiagnosticSession {
+  const session = createSession(kb, configOverrides);
+  for (const [id, delta] of Object.entries(intake.hypothesisBoosts)) {
+    session.scores[id] = (session.scores[id] ?? 0) + delta;
+  }
+  if (intake.safety.emergency) {
+    session.safety.emergency = true;
+    if (intake.safety.reason) session.safety.reasons.push(intake.safety.reason);
+  }
+  if (intake.safety.caution) {
+    session.safety.caution = true;
+    if (intake.safety.reason && !session.safety.reasons.includes(intake.safety.reason)) {
+      session.safety.reasons.push(intake.safety.reason);
+    }
+  }
+  session.intake = intake;
+  session.answers = [
+    {
+      questionId: "symptom_intake",
+      optionId: intake.family,
+      prompt: "What's happening?",
+      label: intake.rawText,
+    },
+  ];
+  return session;
+}
+
+function hazardHypothesesActive(
+  kb: DiagnosticKnowledgeBase,
+  session: DiagnosticSession
+): boolean {
+  return activeHypotheses(kb, session).some((a) => {
+    const id = a.hypothesis.id;
+    return (
+      id.includes("fire") ||
+      id.includes("electrical_hazard") ||
+      id.includes("water_near") ||
+      id.includes("hazard")
+    );
+  });
+}
+
+function isQuestionSuppressed(
+  q: DiagnosticQuestion,
+  kb: DiagnosticKnowledgeBase,
+  session: DiagnosticSession
+): boolean {
+  const suppressed = session.intake?.suppressedTags ?? [];
+  if (!suppressed.length || !q.tags?.length) return false;
+  if (!q.tags.some((t) => suppressed.includes(t))) return false;
+  if (session.safety.emergency) return false;
+  if (hazardHypothesesActive(kb, session)) return false;
+  return true;
+}
+
+function tagAffinity(q: DiagnosticQuestion, session: DiagnosticSession): number {
+  const preferred = session.intake?.preferredTags ?? [];
+  if (!preferred.length || !q.tags?.length) return 0;
+  let hit = 0;
+  for (const t of q.tags) {
+    if (preferred.includes(t)) hit += 1;
+  }
+  return hit * 1.25;
+}
+
+function wantsSafetyQuestions(session: DiagnosticSession, kb: DiagnosticKnowledgeBase): boolean {
+  if (session.safety.emergency) return true;
+  const preferred = session.intake?.preferredTags ?? [];
+  if (preferred.some((t) => t.startsWith("safety_"))) return true;
+  if (hazardHypothesesActive(kb, session)) return true;
+  return false;
 }
 
 export function rankedHypotheses(
@@ -186,7 +265,10 @@ export function eligibleQuestions(
 ): DiagnosticQuestion[] {
   const asked = new Set(session.asked);
   return kb.questions.filter(
-    (q) => !asked.has(q.id) && evaluateConditions(q.conditions, kb, session)
+    (q) =>
+      !asked.has(q.id) &&
+      evaluateConditions(q.conditions, kb, session) &&
+      !isQuestionSuppressed(q, kb, session)
   );
 }
 
@@ -197,19 +279,21 @@ export function selectNextQuestion(
   const candidates = eligibleQuestions(kb, session);
   if (candidates.length === 0) return null;
 
-  // Hard preference: unanswered questions that can escalate to emergency
-  const safetyFirst = candidates.filter((q) =>
-    q.options.some((o) => o.safety?.emergency)
-  );
-  const pool = safetyFirst.length > 0 && session.asked.length < 5 ? safetyFirst : candidates;
+  const allowSafetyBoost = wantsSafetyQuestions(session, kb);
 
   let best: DiagnosticQuestion | null = null;
   let bestUtil = -1;
 
-  for (const q of pool) {
-    // Safety-capable questions get a utility boost early
-    const safetyBoost = q.options.some((o) => o.safety?.emergency) ? 2 : 0;
-    const u = questionUtility(q, kb, session) + safetyBoost;
+  for (const q of candidates) {
+    const isSafetyQ = q.tags?.some((t) => t.startsWith("safety_")) ||
+      q.options.some((o) => o.safety?.emergency);
+    // Do NOT force generic hazard questions — only boost when intake/evidence warrants it
+    const safetyBoost = allowSafetyBoost && isSafetyQ ? 1.5 : 0;
+    // Mildly penalize irrelevant safety questions even if not fully suppressed
+    const safetyPenalty =
+      session.intake && !allowSafetyBoost && isSafetyQ ? -3 : 0;
+    const u =
+      questionUtility(q, kb, session) + tagAffinity(q, session) + safetyBoost + safetyPenalty;
     if (u > bestUtil) {
       bestUtil = u;
       best = q;
@@ -222,11 +306,11 @@ export function selectNextQuestion(
 
   if (!best) return null;
 
-  const rawUtil = questionUtility(best, kb, session);
+  const rawUtil = questionUtility(best, kb, session) + tagAffinity(best, session);
   if (rawUtil < session.config.minUtility) {
     if (session.asked.length === 0) return best;
     if ((best.priority ?? 5) <= 2) return best;
-    if (best.options.some((o) => o.safety?.emergency)) return best;
+    if (allowSafetyBoost && best.tags?.some((t) => t.startsWith("safety_"))) return best;
     return rawUtil >= session.config.minUtility * 0.5 ? best : null;
   }
   return best;

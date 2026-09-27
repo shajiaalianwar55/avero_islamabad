@@ -3,6 +3,7 @@ import {
   answerAndContinue,
   applyAnswer,
   createSession,
+  createSessionFromIntake,
   nextStep,
   questionUtility,
   rankedHypotheses,
@@ -10,8 +11,69 @@ import {
   selectNextQuestion,
   shouldStop,
 } from "@/lib/diagnostics/engine";
-import { kitchenSinkKb, radiatorKb } from "@/lib/diagnostics";
+import { kitchenSinkKb, parseSymptomIntake, radiatorKb } from "@/lib/diagnostics";
 import type { DiagnosticQuestion } from "@/lib/diagnostics/types";
+
+describe("symptom intake gates first question", () => {
+  it("not heating does not open with a burning-smell question", () => {
+    const intake = parseSymptomIntake({
+      applianceId: "radiator",
+      text: "Not heating",
+      shortcutId: "not_heating",
+    });
+    expect(intake.family).toBe("no_heat");
+    expect(intake.safety.emergency).toBe(false);
+    expect(intake.suppressedTags).toContain("safety_burn");
+
+    const session = createSessionFromIntake(radiatorKb, intake);
+    const step = nextStep(radiatorKb, session);
+    expect(step.stopped).toBe(false);
+    if (!step.stopped) {
+      expect(step.question.id).not.toBe("rad_safety_smell");
+      expect(step.question.id).not.toBe("rad_safety_sparks");
+      expect(step.question.tags?.includes("safety_burn")).not.toBe(true);
+      // Should lean heat/power/type family
+      expect(
+        ["rad_type", "rad_thermostat_position", "rad_power_light", "rad_waited"].includes(
+          step.question.id
+        ) || step.question.tags?.some((t) => ["heat", "power", "type"].includes(t))
+      ).toBe(true);
+    }
+  });
+
+  it("burning smell at intake triggers emergency without diagnostic quiz", () => {
+    const intake = parseSymptomIntake({
+      applianceId: "radiator",
+      text: "Burning smell and a bit of smoke",
+      shortcutId: "burn_smoke",
+    });
+    expect(intake.safety.emergency).toBe(true);
+    const session = createSessionFromIntake(radiatorKb, intake);
+    const step = nextStep(radiatorKb, session);
+    expect(step.stopped).toBe(true);
+    if (step.stopped) {
+      expect(step.outcome).toBe("EMERGENCY");
+    }
+  });
+
+  it("appliance alone does not force a unique first question without intake", () => {
+    const plain = selectNextQuestion(radiatorKb, createSession(radiatorKb));
+    const heated = selectNextQuestion(
+      radiatorKb,
+      createSessionFromIntake(
+        radiatorKb,
+        parseSymptomIntake({
+          applianceId: "radiator",
+          shortcutId: "not_heating",
+          text: "Not heating",
+        })
+      )
+    );
+    // With intake, first question should be preference-shaped (not generic safety)
+    expect(heated?.id).not.toBe("rad_safety_smell");
+    expect(plain?.id).toBeTruthy();
+  });
+});
 
 describe("diagnostic engine core", () => {
   it("starts with multiple hypotheses scored from priors", () => {
@@ -112,12 +174,22 @@ describe("kitchen sink fixtures", () => {
   });
 
   it("water near electrics → EMERGENCY", () => {
-    const result = runWithChooser(kitchenSinkKb, (q) => {
-      if (q.id === "sink_water_electrics") return "near_elec";
-      if (q.id === "sink_safety_flood") return "not_flood";
-      return pickNonEmergency(q);
+    const intake = parseSymptomIntake({
+      applianceId: "kitchen-sink",
+      text: "Water under the sink near a plug",
+      shortcutId: "leak_under",
     });
-    expect(result.outcome).toBe("EMERGENCY");
+    // Force electrical hazard via free-text gate
+    const wet = parseSymptomIntake({
+      applianceId: "kitchen-sink",
+      text: "Water is on the dishwasher plug under the sink",
+    });
+    expect(wet.safety.emergency).toBe(true);
+    const session = createSessionFromIntake(kitchenSinkKb, wet);
+    const step = nextStep(kitchenSinkKb, session);
+    expect(step.stopped).toBe(true);
+    if (step.stopped) expect(step.outcome).toBe("EMERGENCY");
+    expect(intake.family).toBe("water_leak");
   });
 
   it("slow drain both sides / backup → technician deeper clog path", () => {
@@ -180,13 +252,15 @@ describe("radiator fixtures (demo)", () => {
   });
 
   it("burning smell → EMERGENCY hard stop", () => {
-    const result = runWithChooser(radiatorKb, (q) => {
-      if (q.id === "rad_safety_smell") return "yes_burn";
-      if (q.id === "rad_type") return "oil_portable";
-      if (q.id === "rad_main_symptom") return "smell_scare";
-      return pickNonEmergency(q);
+    const intake = parseSymptomIntake({
+      applianceId: "radiator",
+      text: "Burning smell",
+      shortcutId: "burn_smoke",
     });
-    expect(result.outcome).toBe("EMERGENCY");
+    const session = createSessionFromIntake(radiatorKb, intake);
+    const step = nextStep(radiatorKb, session);
+    expect(step.stopped).toBe(true);
+    if (step.stopped) expect(step.outcome).toBe("EMERGENCY");
   });
 
   it("hydronic airlock pattern → technician", () => {

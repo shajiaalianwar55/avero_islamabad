@@ -9,7 +9,8 @@ export type ProgressBranch = "none" | "DIY" | "TECHNICIAN" | "EMERGENCY";
 export type ProgressStepId =
   | "report"
   | "appliance"
-  | "questions"
+  | "problem"
+  | "diagnose"
   | "decision"
   | "emergency"
   | "diy"
@@ -21,7 +22,8 @@ type StepDef = { id: ProgressStepId; label: string };
 const SHARED: StepDef[] = [
   { id: "report", label: "Report" },
   { id: "appliance", label: "Appliance" },
-  { id: "questions", label: "Questions" },
+  { id: "problem", label: "Problem" },
+  { id: "diagnose", label: "Diagnose" },
   { id: "decision", label: "Decision" },
 ];
 
@@ -32,7 +34,7 @@ export function stepsForBranch(branch: ProgressBranch): StepDef[] {
       return [
         { id: "report", label: "Report" },
         { id: "appliance", label: "Appliance" },
-        { id: "questions", label: "Questions" },
+        { id: "problem", label: "Problem" },
         { id: "emergency", label: "Emergency" },
       ];
     case "DIY":
@@ -72,7 +74,7 @@ function inferFromPath(pathname: string): {
     return { current: "report", branch: "none" };
   }
   if (pathname.startsWith("/incident/")) {
-    return { current: "questions", branch: "none" };
+    return { current: "diagnose", branch: "none" };
   }
   return { current: "report", branch: "none" };
 }
