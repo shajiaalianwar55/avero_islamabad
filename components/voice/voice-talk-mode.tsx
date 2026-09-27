@@ -29,6 +29,7 @@ import {
   type DiagnosticResult,
   type PathOutcome,
 } from "@/lib/diagnostics";
+import { rememberRepair, repairFromApi } from "@/lib/demo/client-history";
 
 type WaveState = "idle" | "speaking" | "listening";
 type Phase = "boot" | "appliance" | "symptom" | "questions" | "decision" | "diy" | "done";
@@ -513,7 +514,14 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
               diy.map((s) => s.instruction).join(" → ") ||
               "Resolved with Avero voice DIY guidance",
           }),
-        }).catch(() => null);
+        })
+          .then((r) => r.json())
+          .then((json) => {
+            if (json.ok && json.data?.repair) {
+              rememberRepair(repairFromApi(json.data.repair));
+            }
+          })
+          .catch(() => null);
       };
 
       for (let i = 0; i < diy.length && !run.cancelled; i++) {
@@ -701,7 +709,14 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
                     category: appliance.category,
                     work_done: "Resolved with Avero voice DIY guidance",
                   }),
-                }).catch(() => null);
+                })
+                  .then((r) => r.json())
+                  .then((json) => {
+                    if (json.ok && json.data?.repair) {
+                      rememberRepair(repairFromApi(json.data.repair));
+                    }
+                  })
+                  .catch(() => null);
               }
               router.push("/history");
             }}

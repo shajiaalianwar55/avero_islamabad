@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DemoProgress } from "@/components/demo/progress-steps";
+import { rememberRepair, repairFromApi } from "@/lib/demo/client-history";
 
 type BookingData = {
   booking: {
@@ -79,9 +80,13 @@ export function BookingPanel({ bookingId }: { bookingId: string }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ work_done: "Demo repair completed" }),
     }).catch(() => null);
-    await fetch(`/api/bookings/${bookingId}/confirm-completion`, {
+    const confirmRes = await fetch(`/api/bookings/${bookingId}/confirm-completion`, {
       method: "POST",
     });
+    const confirmJson = await confirmRes.json().catch(() => null);
+    if (confirmJson?.ok && confirmJson.data?.repair) {
+      rememberRepair(repairFromApi(confirmJson.data.repair));
+    }
     await refresh();
     setBusy(false);
     setDone(true);

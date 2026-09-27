@@ -33,6 +33,7 @@ import {
 } from "@/lib/diagnostics";
 import { buildEmergencyCopy } from "@/lib/diagnostics/emergency-copy";
 import { EmergencyDecisionPanel } from "@/components/safety/emergency-decision-panel";
+import { rememberRepair, repairFromApi } from "@/lib/demo/client-history";
 
 type Phase = "report" | "appliance" | "symptom" | "questions" | "decision" | "diy";
 
@@ -294,6 +295,9 @@ export function GuidedIncidentFlow() {
       const json = await res.json();
       if (!json.ok) {
         throw new Error(json.error?.message || "Could not save to Home History");
+      }
+      if (json.data?.repair) {
+        rememberRepair(repairFromApi(json.data.repair));
       }
       router.push("/history");
     } catch (e) {

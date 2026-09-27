@@ -6,30 +6,40 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { DemoProgress } from "@/components/demo/progress-steps";
-
-type Repair = {
-  id: string;
-  title: string;
-  work_done: string;
-  provider_name?: string | null;
-  amount_paid?: number | null;
-  completed_at: string;
-  warranty_days?: number | null;
-  warranty_remaining_days?: number | null;
-  category?: string;
-};
+import {
+  mergeRepairs,
+  readLocalRepairs,
+  rememberRepair,
+  repairFromApi,
+  type LocalRepair,
+} from "@/lib/demo/client-history";
 
 export function HistoryTimeline() {
-  const [repairs, setRepairs] = useState<Repair[]>([]);
+  const [repairs, setRepairs] = useState<LocalRepair[]>([]);
   const [filter, setFilter] = useState("all");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/history", { cache: "no-store" })
+    const local = readLocalRepairs();
+    setRepairs(local);
+
+    fetch(`/api/history?t=${Date.now()}`, { cache: "no-store" })
       .then((r) => r.json())
       .then((json) => {
-        if (!cancelled && json.ok) setRepairs(json.data.repairs);
+        if (cancelled) return;
+        const server = json.ok
+          ? (json.data.repairs as Record<string, unknown>[]).map(repairFromApi)
+          : [];
+        const merged = mergeRepairs(server, local);
+        setRepairs(merged);
+        // Keep browser copy in sync so the next visit still has DIY/tech jobs
+        for (const r of merged) rememberRepair(r);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
       });
+
     return () => {
       cancelled = true;
     };
@@ -38,26 +48,35 @@ export function HistoryTimeline() {
   const filtered =
     filter === "all"
       ? repairs
-      : repairs.filter((r) => (r.category || "").includes(filter));
+      : repairs.filter((r) =>
+          `${r.category || ""} ${r.title} ${r.work_done} ${r.provider_name || ""}`
+            .toLowerCase()
+            .includes(filter)
+        );
 
   return (
     <div className="space-y-4">
       <DemoProgress current="history" branch="DIY" />
-      <div className="flex flex-wrap gap-2">
-        {["all", "ac", "plumbing", "electrical"].map((f) => (
-          <Button
-            key={f}
-            size="sm"
-            variant={filter === f ? "default" : "secondary"}
-            onClick={() => setFilter(f)}
-          >
-            {f}
-          </Button>
-        ))}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-2">
+          {["all", "ac", "plumbing", "electrical"].map((f) => (
+            <Button
+              key={f}
+              size="sm"
+              variant={filter === f ? "default" : "secondary"}
+              onClick={() => setFilter(f)}
+            >
+              {f}
+            </Button>
+          ))}
+        </div>
+        <p className="text-xs text-[var(--avero-muted)]">
+          {loading ? "Loading…" : `${filtered.length} record${filtered.length === 1 ? "" : "s"}`}
+        </p>
       </div>
-      {filtered.length === 0 && (
+      {filtered.length === 0 && !loading && (
         <p className="text-sm text-[var(--avero-muted)]">
-          No repairs yet — finish a technician booking to create one.
+          No repairs yet — finish DIY or book a technician, then return here.
         </p>
       )}
       {filtered.map((r) => (

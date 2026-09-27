@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DemoProgress } from "@/components/demo/progress-steps";
+import { rememberRepair, repairFromApi } from "@/lib/demo/client-history";
 
 type Step = {
   step_order?: number;
@@ -60,7 +61,7 @@ export function DiyWizard({ incidentId }: { incidentId: string }) {
       return;
     }
     if (status === "RESOLVED") {
-      await fetch("/api/history/diy-complete", {
+      const saved = await fetch("/api/history/diy-complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -69,7 +70,12 @@ export function DiyWizard({ incidentId }: { incidentId: string }) {
           work_done: "Resolved with Avero DIY wizard",
           area: "F-10",
         }),
-      }).catch(() => null);
+      })
+        .then((r) => r.json())
+        .catch(() => null);
+      if (saved?.ok && saved.data?.repair) {
+        rememberRepair(repairFromApi(saved.data.repair));
+      }
       router.push(`/history`);
       return;
     }

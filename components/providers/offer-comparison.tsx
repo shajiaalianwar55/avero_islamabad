@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DemoProgress } from "@/components/demo/progress-steps";
+import { rememberRepair, repairFromApi } from "@/lib/demo/client-history";
 
 type OfferRow = {
   offer: {
@@ -126,6 +127,9 @@ export function OfferComparison({ incidentId }: { incidentId: string }) {
       });
       const json = await res.json();
       if (json.ok) {
+        if (json.data?.repair) {
+          rememberRepair(repairFromApi(json.data.repair));
+        }
         router.push(`/booking/${json.data.booking.id}`);
         return;
       }
