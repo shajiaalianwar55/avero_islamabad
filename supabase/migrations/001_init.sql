@@ -124,6 +124,7 @@ create table if not exists providers (
   verified boolean not null default false,
   phone text,
   avatar_url text,
+  verification_notes text,
   created_at timestamptz not null default now()
 );
 create index if not exists providers_trade_idx on providers(trade);
