@@ -61,6 +61,8 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
   const runRef = useRef({ cancelled: false });
   /** Tap-to-answer while listening */
   const tapResolveRef = useRef<((label: string) => void) | null>(null);
+  /** Tap while Avero is still speaking — skip the rest of the utterance */
+  const earlyAnswerRef = useRef<string | null>(null);
 
   const createAndRoute = useCallback(
     async (
@@ -141,20 +143,29 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
       if (run.cancelled) return;
       setPrompt(text);
       if (!keepChoices) setChoices([]);
-      setStatusLine("");
+      setStatusLine(keepChoices ? "Tap an option anytime — no need to wait" : "");
       setWave("speaking");
       await speak(text);
       if (!run.cancelled) setWave("idle");
     };
 
     const showAsk = (question: string, opts: Choice[]) => {
+      earlyAnswerRef.current = null;
       setPrompt(question);
       setChoices(opts);
-      setStatusLine("");
+      setStatusLine("Tap an option anytime — no need to wait");
     };
 
     const hearSafe = async (): Promise<string> => {
       if (run.cancelled) return "";
+      if (earlyAnswerRef.current) {
+        const text = earlyAnswerRef.current;
+        earlyAnswerRef.current = null;
+        setHeard(text);
+        setWave("idle");
+        setStatusLine("");
+        return text;
+      }
       setWave("listening");
       setStatusLine("Listening… speak your choice, or tap an option");
       setHeard("");
@@ -172,7 +183,9 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
       tapResolveRef.current = null;
       if (run.cancelled) return "";
 
-      const text = result.text.trim();
+      // Prefer a tap that landed between speak ending and listen starting
+      const text = (earlyAnswerRef.current || result.text).trim();
+      earlyAnswerRef.current = null;
       setHeard(text);
       setWave("idle");
       setStatusLine("");
@@ -541,6 +554,7 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
     return () => {
       run.cancelled = true;
       tapResolveRef.current = null;
+      earlyAnswerRef.current = null;
       stopSpeaking();
     };
   }, [createAndRoute, onExit, router]);
@@ -548,14 +562,27 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
   function leave() {
     runRef.current.cancelled = true;
     tapResolveRef.current = null;
+    earlyAnswerRef.current = null;
     stopSpeaking();
     onExit();
   }
 
   function onTapChoice(choice: Choice) {
-    if (wave !== "listening") return;
-    const resolve = tapResolveRef.current;
-    if (resolve) resolve(choice.label);
+    if (busy || choices.length === 0) return;
+    // Interrupt TTS mid-sentence and take the answer immediately
+    if (wave === "speaking") {
+      earlyAnswerRef.current = choice.label;
+      setHeard(choice.label);
+      stopSpeaking();
+      return;
+    }
+    if (tapResolveRef.current) {
+      tapResolveRef.current(choice.label);
+      return;
+    }
+    // Brief gap between speak ending and listen starting
+    earlyAnswerRef.current = choice.label;
+    setHeard(choice.label);
   }
 
   return (
@@ -589,7 +616,7 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
               <button
                 type="button"
                 onClick={() => onTapChoice(c)}
-                disabled={wave !== "listening" || busy}
+                disabled={busy}
                 className="w-full rounded-lg border border-[var(--avero-line)] bg-[var(--avero-panel)] px-4 py-3 text-left text-sm text-[var(--avero-ink)] transition enabled:hover:border-[var(--avero-teal)] disabled:opacity-80"
               >
                 {c.label}
