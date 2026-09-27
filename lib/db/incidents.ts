@@ -331,3 +331,26 @@ export async function getServiceRequest(
     return demo.getServiceRequest(id) ?? null;
   }
 }
+
+export async function ensureServiceRequestForIncident(
+  incidentId: string,
+  opts?: { category?: string; area?: string; title?: string; summary?: string }
+): Promise<ServiceRequestRow> {
+  if (shouldUseDemoStore()) {
+    return demo.ensureServiceRequestForIncident(incidentId, opts);
+  }
+  try {
+    const supabase = await getAdmin();
+    const { data: existing } = await supabase
+      .from("service_requests")
+      .select("*")
+      .eq("incident_id", incidentId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (existing) return existing as ServiceRequestRow;
+  } catch {
+    /* fall through to demo */
+  }
+  return demo.ensureServiceRequestForIncident(incidentId, opts);
+}

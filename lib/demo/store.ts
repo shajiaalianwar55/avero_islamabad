@@ -428,6 +428,40 @@ export function getServiceRequest(id: string): ServiceRequestRow | undefined {
   return demoStore().serviceRequests.find((r) => r.id === id);
 }
 
+export function getLatestServiceRequestForIncident(
+  incidentId: string
+): ServiceRequestRow | undefined {
+  return demoStore().serviceRequests
+    .filter((r) => r.incident_id === incidentId)
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+}
+
+/** Fast demo SR — no AI. Used when booking needs to recover after store reset. */
+export function ensureServiceRequestForIncident(
+  incidentId: string,
+  opts?: { category?: string; area?: string; title?: string; summary?: string }
+): ServiceRequestRow {
+  const existing = getLatestServiceRequestForIncident(incidentId);
+  if (existing && (existing.status === "OPEN" || existing.status === "OFFERS_RECEIVED")) {
+    return existing;
+  }
+  const incident = getIncident(incidentId);
+  const category = opts?.category || incident?.category_guess || "plumbing";
+  return createServiceRequest({
+    incident_id: incidentId,
+    category,
+    area: opts?.area || "F-10",
+    title: opts?.title || `${category} service request`,
+    problem_summary:
+      opts?.summary || incident?.initial_description || "Home issue reported via Avero",
+    symptoms: [incident?.initial_description || "Issue reported"].filter(Boolean),
+    urgency: "medium",
+    hazard_notes: [],
+    actions_tried: [],
+    preferred_time: null,
+  });
+}
+
 export function listOpenServiceRequests(): ServiceRequestRow[] {
   return demoStore().serviceRequests
     .filter((r) => r.status === "OPEN" || r.status === "OFFERS_RECEIVED")

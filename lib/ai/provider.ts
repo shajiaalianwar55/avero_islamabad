@@ -67,6 +67,7 @@ async function completeOpenAiCompatible(
       ...(options.json ? { response_format: { type: "json_object" } } : {}),
       messages: options.messages,
     }),
+    signal: AbortSignal.timeout(8000),
   });
 
   if (!res.ok) {
@@ -109,6 +110,7 @@ async function completeAnthropicText(
         : system,
       messages,
     }),
+    signal: AbortSignal.timeout(8000),
   });
 
   if (!res.ok) {

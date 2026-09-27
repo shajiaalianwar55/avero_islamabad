@@ -48,5 +48,9 @@ export function hasSupabaseConfig(): boolean {
 }
 
 export function hasAiConfig(): boolean {
-  return Boolean(env.AI_API_KEY);
+  const key = (env.AI_API_KEY || "").trim();
+  if (!key) return false;
+  // Treat .env.example placeholders as unset so demos never hang on bad keys
+  if (/^your-|changeme|placeholder|example/i.test(key)) return false;
+  return true;
 }

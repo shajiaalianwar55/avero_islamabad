@@ -59,7 +59,6 @@ export function OfferComparison({ incidentId }: { incidentId: string }) {
       try {
         let id = urlSr;
 
-        // Validate existing SR; recreate if missing/stale after demo store reset
         if (id) {
           const check = await fetch(`/api/service-requests/${id}/offers`).then((r) =>
             r.json()
@@ -115,53 +114,28 @@ export function OfferComparison({ incidentId }: { incidentId: string }) {
     setBookingId(preferredOfferId || "booking");
 
     try {
-      async function postBooking(id: string) {
-        const res = await fetch("/api/bookings", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ offer_id: id }),
-        });
-        return res.json();
-      }
-
-      let id = srId;
-      const srRes = await fetch(`/api/incidents/${incidentId}/service-request`, {
+      // One atomic server call — recovers stale offers without AI / extra hops
+      const res = await fetch("/api/bookings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify({
+          offer_id: preferredOfferId || undefined,
+          service_request_id: srId || undefined,
+          incident_id: incidentId,
+        }),
       });
-      const srJson = await srRes.json();
-      if (srJson.ok) {
-        id = srJson.data.serviceRequest.id as string;
-        setSrId(id);
-      } else if (!id) {
-        setBookError(
-          srJson.error?.message ||
-            "This demo session expired. Report the problem again, then book."
-        );
-        return;
-      }
-
-      const rows = await ensureOffers(id);
-      if (!rows.length) {
-        setBookError("No offers available right now. Try again.");
-        return;
-      }
-      setOffers(rows);
-
-      const match =
-        rows.find((o) => o.offer.id === preferredOfferId) ||
-        rows.find((o) => o.badges?.includes("Recommended")) ||
-        rows[0]!;
-
-      const json = await postBooking(match.offer.id);
+      const json = await res.json();
       if (json.ok) {
         router.push(`/booking/${json.data.booking.id}`);
         return;
       }
       setBookError(json.error?.message || "Could not book this offer.");
-    } catch {
-      setBookError("Could not book this offer. Check your connection and try again.");
+    } catch (e) {
+      setBookError(
+        e instanceof Error
+          ? e.message
+          : "Could not book this offer. Try again."
+      );
     } finally {
       setBookingId(null);
     }
@@ -207,7 +181,7 @@ export function OfferComparison({ incidentId }: { incidentId: string }) {
             disabled={bookingId !== null}
             onClick={() => book(recommended.offer.id)}
           >
-            {bookingId === recommended.offer.id
+            {bookingId === recommended.offer.id || bookingId === "booking"
               ? "Booking…"
               : "Book recommended offer →"}
           </Button>

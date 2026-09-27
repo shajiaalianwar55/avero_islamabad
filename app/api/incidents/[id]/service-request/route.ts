@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { ok, fail } from "@/lib/api";
-import { buildServiceRequest } from "@/lib/ai/service-request";
+import {
+  buildServiceRequest,
+  fallbackServiceRequest,
+} from "@/lib/ai/service-request";
 import {
   addMessage,
   createServiceRequest,
@@ -11,6 +14,7 @@ import {
 } from "@/lib/db/incidents";
 import { getHome } from "@/lib/db/history";
 import { parseIncidentIntake } from "@/lib/ai/intake";
+import { env, hasAiConfig } from "@/lib/env";
 
 const bodySchema = z.object({
   preferred_time: z.string().optional(),
@@ -43,15 +47,11 @@ export async function POST(request: Request, context: RouteContext) {
     const home = await getHome(incident.home_id);
     const decision = await getLatestTriageDecision(id);
     const messages = await listMessages(id);
-    const intake = await parseIncidentIntake(
-      [incident.initial_description, ...messages.map((m) => m.content)].join("\n")
-    );
 
-    const contract = await buildServiceRequest({
+    const baseInput = {
       incident_id: id,
       area: parsed.data.area ?? home?.area ?? "F-10",
       description: incident.initial_description,
-      intake,
       decision: decision
         ? {
             outcome: decision.outcome,
@@ -65,7 +65,32 @@ export async function POST(request: Request, context: RouteContext) {
         : null,
       actions_tried: parsed.data.actions_tried,
       preferred_time: parsed.data.preferred_time,
-    });
+    };
+
+    // Demo / missing AI: skip network AI so booking/offers never hang
+    const useFastPath = env.NEXT_PUBLIC_DEMO_MODE || !hasAiConfig();
+    let contract;
+    if (useFastPath) {
+      contract = fallbackServiceRequest({
+        ...baseInput,
+        intake: {
+          category_guess: (incident.category_guess as
+            | "plumbing"
+            | "electrical"
+            | "ac"
+            | "appliance"
+            | "unknown") || "unknown",
+          symptoms: [incident.initial_description],
+          detected_hazards: [],
+          missing_information: [],
+        },
+      });
+    } else {
+      const intake = await parseIncidentIntake(
+        [incident.initial_description, ...messages.map((m) => m.content)].join("\n")
+      );
+      contract = await buildServiceRequest({ ...baseInput, intake });
+    }
 
     const serviceRequest = await createServiceRequest({
       incident_id: id,
