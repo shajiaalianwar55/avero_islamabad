@@ -49,16 +49,27 @@ export default function HomePage() {
         <h2 className="font-[family-name:var(--font-display)] text-3xl">How it works</h2>
         <ol className="mt-6 grid gap-4 md:grid-cols-3">
           {[
-            "Describe the issue and pick the appliance (or add a new one).",
-            "Answer a few multiple-choice questions for that appliance.",
-            "Follow DIY with a persistent “solved” button, or book a technician.",
+            {
+              title: "Tell Avero what happened",
+              body: "Describe the problem in your own words and choose the appliance or area involved.",
+            },
+            {
+              title: "Avero investigates",
+              body: "Avero asks adaptive questions to narrow down the cause, check for safety risks, and understand what should happen next.",
+            },
+            {
+              title: "Take the right next step",
+              body: "Get guided DIY help, book the right technician, or receive immediate safety guidance if the issue is urgent.",
+            },
           ].map((step, i) => (
             <li
-              key={step}
+              key={step.title}
               className="rounded-lg border border-[var(--avero-line)] bg-[var(--avero-panel)] p-4"
             >
-              <span className="font-semibold text-[var(--avero-teal)]">Step {i + 1}</span>
-              <p className="mt-2 text-[var(--avero-ink)]">{step}</p>
+              <span className="font-semibold text-[var(--avero-teal)]">
+                Step {i + 1}: {step.title}
+              </span>
+              <p className="mt-2 text-[var(--avero-ink)]">{step.body}</p>
             </li>
           ))}
         </ol>
