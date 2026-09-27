@@ -32,14 +32,18 @@ type AnswerRow = {
   scores: Partial<Record<FlowOutcome, number>>;
 };
 
+type Choice = { id: string; label: string };
+
 /**
  * Voice-first triage: Avero speaks, shows waves, listens for answers.
- * Chrome/Edge + mic permission. Screen flow remains the fallback.
+ * On-screen choices stay visible while listening.
  */
 export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
   const router = useRouter();
   const [wave, setWave] = useState<WaveState>("idle");
-  const [caption, setCaption] = useState("Starting talk mode…");
+  const [prompt, setPrompt] = useState("Starting talk mode…");
+  const [choices, setChoices] = useState<Choice[]>([]);
+  const [statusLine, setStatusLine] = useState("");
   const [heard, setHeard] = useState("");
   const [phase, setPhase] = useState<Phase>("boot");
   const [appliance, setAppliance] = useState<ApplianceDef | null>(null);
@@ -49,6 +53,8 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
   const [busy, setBusy] = useState(false);
   const [unsupported, setUnsupported] = useState(false);
   const runRef = useRef({ cancelled: false });
+  /** Tap-to-answer while listening */
+  const tapResolveRef = useRef<((label: string) => void) | null>(null);
 
   const createAndRoute = useCallback(
     async (
@@ -119,28 +125,51 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
       !window.speechSynthesis
     ) {
       setUnsupported(true);
-      setCaption("Voice talk needs Chrome or Edge with mic permission.");
+      setPrompt("Voice talk needs Chrome or Edge with mic permission.");
       return () => {
         run.cancelled = true;
       };
     }
 
-    const saySafe = async (text: string) => {
+    const saySafe = async (text: string, keepChoices = false) => {
       if (run.cancelled) return;
-      setCaption(text);
+      setPrompt(text);
+      if (!keepChoices) setChoices([]);
+      setStatusLine("");
       setWave("speaking");
       await speak(text);
       if (!run.cancelled) setWave("idle");
     };
 
-    const hearSafe = async () => {
+    const showAsk = (question: string, opts: Choice[]) => {
+      setPrompt(question);
+      setChoices(opts);
+      setStatusLine("");
+    };
+
+    const hearSafe = async (): Promise<string> => {
       if (run.cancelled) return "";
       setWave("listening");
-      setCaption("Listening… speak now");
-      const text = await listenOnce({ timeoutMs: 10000 });
+      setStatusLine("Listening… speak your choice, or tap an option");
+      setHeard("");
+
+      const spokenPromise = listenOnce({ timeoutMs: 14000 });
+      const tappedPromise = new Promise<string>((resolve) => {
+        tapResolveRef.current = resolve;
+      });
+
+      const result = await Promise.race([
+        spokenPromise.then((t) => ({ source: "voice" as const, text: t })),
+        tappedPromise.then((t) => ({ source: "tap" as const, text: t })),
+      ]);
+
+      tapResolveRef.current = null;
       if (run.cancelled) return "";
+
+      const text = result.text.trim();
       setHeard(text);
       setWave("idle");
+      setStatusLine("");
       return text;
     };
 
@@ -148,22 +177,34 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
       await new Promise((r) => setTimeout(r, 100));
       if (run.cancelled) return;
 
+      const applianceChoices: Choice[] = [
+        ...DEMO_APPLIANCES.map((a) => ({
+          id: a.id,
+          label: `${a.brand} ${a.name}`,
+        })),
+        { id: "add-new", label: "Add a new appliance" },
+      ];
+
+      showAsk("Which appliance has a problem?", applianceChoices);
       await saySafe(
-        "Hi, I'm Avero. Tell me which appliance has a problem. You can say radiator, kitchen sink, Gree A C, Dawlance fridge, Haier washing machine, or say add new."
+        "Hi, I'm Avero. Tell me which appliance has a problem. You can say radiator, kitchen sink, Gree A C, Dawlance fridge, Haier washing machine, or say add new.",
+        true
       );
       if (run.cancelled) return;
       setPhase("appliance");
 
       let chosen: ApplianceDef | null = null;
       for (let attempt = 0; attempt < 3 && !chosen && !run.cancelled; attempt++) {
+        showAsk("Which appliance has a problem?", applianceChoices);
         const spoken = await hearSafe();
         if (run.cancelled) return;
         if (!spoken) {
-          await saySafe("I didn't catch that. Please say the appliance name again.");
+          await saySafe("I didn't catch that. Please say the appliance name again.", true);
           continue;
         }
         const lower = spoken.toLowerCase();
         if (/add|new|other|custom/.test(lower)) {
+          setChoices([]);
           await saySafe("What brand is it? For example Haier, Dawlance, Gree, or Orient.");
           const brand = (await hearSafe()) || "Haier";
           if (run.cancelled) return;
@@ -189,9 +230,12 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
           DEMO_APPLIANCES.find((a) => {
             const n = a.name.toLowerCase();
             const brand = a.brand.toLowerCase();
+            const full = `${brand} ${n}`;
             return (
               lower.includes(brand) ||
               lower.includes(n) ||
+              lower.includes(full) ||
+              spoken === `${a.brand} ${a.name}` ||
               n.split(/\s+/).some((w) => w.length > 3 && lower.includes(w)) ||
               (a.id === "radiator" && /radiator|heater|oil\s*filled/.test(lower)) ||
               (a.id === "bedroom-ac" && /\bac\b|air\s*con/.test(lower)) ||
@@ -207,7 +251,8 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
 
         if (!chosen) {
           await saySafe(
-            `I heard ${spoken}. Please say a brand and appliance, like Gree A C, Dawlance fridge, or Haier washing machine.`
+            `I heard ${spoken}. Please say a brand and appliance, or tap an option on screen.`,
+            true
           );
         }
       }
@@ -220,8 +265,9 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
       }
 
       setAppliance(chosen);
+      setChoices([]);
       await saySafe(
-        `Okay, ${applianceLabel(chosen)}. I'll ask a few short questions. Answer with option one, two, or three, or say the answer in your own words.`
+        `Okay, ${applianceLabel(chosen)}. I'll ask a few short questions. Answer with option one, two, or three, or tap an option.`
       );
       if (run.cancelled) return;
 
@@ -232,18 +278,38 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
         setMcqIndex(i);
         setPhase("questions");
         const q = mcqs[i];
+        const opts: Choice[] = q.options.map((o, idx) => ({
+          id: o.id,
+          label: `${idx + 1}. ${o.label}`,
+        }));
         const optionLines = q.options
           .map((o, idx) => `Option ${idx + 1}: ${o.label}`)
           .join(". ");
-        await saySafe(`${q.question} ${optionLines}`);
+
+        showAsk(q.question, opts);
+        await saySafe(`${q.question} ${optionLines}`, true);
         if (run.cancelled) return;
 
         let matched: (typeof q.options)[number] | null = null;
         for (let tryN = 0; tryN < 2 && !matched && !run.cancelled; tryN++) {
+          showAsk(q.question, opts);
           const spoken = await hearSafe();
           if (run.cancelled) return;
-          matched = matchSpokenChoice(spoken, q.options);
-          if (!matched) await saySafe("Please say option one, two, or three.");
+          // Tap may return "1. label" — strip number prefix for matching
+          const normalized = spoken.replace(/^\d+\.\s*/, "");
+          matched =
+            matchSpokenChoice(normalized, q.options) ||
+            matchSpokenChoice(spoken, q.options) ||
+            q.options.find(
+              (o, idx) =>
+                spoken === `${idx + 1}. ${o.label}` ||
+                spoken === o.label ||
+                lowerIncludesOption(spoken, o.label)
+            ) ||
+            null;
+          if (!matched) {
+            await saySafe("Please say option one, two, or three — or tap an option.", true);
+          }
         }
         if (!matched) matched = q.options[0];
         collected.push({
@@ -251,6 +317,7 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
           answer: matched.label,
           scores: matched.score,
         });
+        setChoices([]);
         await saySafe(`Got it. ${matched.label}.`);
       }
 
@@ -260,6 +327,7 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
       );
       setOutcome(result.outcome);
       setPhase("decision");
+      setChoices([]);
 
       if (result.outcome === "EMERGENCY") {
         await saySafe(
@@ -271,8 +339,13 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
       }
 
       if (result.outcome === "TECHNICIAN") {
+        showAsk("A technician is the better next step.", [
+          { id: "continue", label: "Continue to offers" },
+          { id: "back", label: "Exit talk mode" },
+        ]);
         await saySafe(
-          "A technician is the better next step. Say continue to see offers, or say back to leave talk mode."
+          "A technician is the better next step. Say continue to see offers, or say back to leave talk mode.",
+          true
         );
         if (run.cancelled) return;
         const spoken = await hearSafe();
@@ -294,19 +367,28 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
 
       for (let i = 0; i < diy.length && !run.cancelled; i++) {
         setDiyStep(i);
+        const diyChoices: Choice[] = [
+          { id: "next", label: "Next step" },
+          { id: "solved", label: "Issue solved" },
+          { id: "tech", label: "Get a technician" },
+        ];
+        showAsk(diy[i].instruction, diyChoices);
         await saySafe(
-          `Step ${i + 1}. ${diy[i].instruction} Success check: ${diy[i].success_check}. When ready, say next, solved, or technician.`
+          `Step ${i + 1}. ${diy[i].instruction} Success check: ${diy[i].success_check}. When ready, say next, solved, or technician.`,
+          true
         );
         if (run.cancelled) return;
         const spoken = (await hearSafe()).toLowerCase();
         if (run.cancelled) return;
         if (/solved|fixed|done|working/.test(spoken)) {
+          setChoices([]);
           await saySafe("Great — glad it's fixed. Opening your home history.");
           setPhase("done");
           router.push("/history");
           return;
         }
         if (/tech|person|help|escalate|can't|cannot/.test(spoken)) {
+          setChoices([]);
           await saySafe("Okay, switching to a technician.");
           await createAndRoute(
             "TECHNICIAN",
@@ -320,12 +402,18 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
       }
 
       if (run.cancelled) return;
+      showAsk("Were the DIY steps enough?", [
+        { id: "solved", label: "Issue solved" },
+        { id: "tech", label: "Get a technician" },
+      ]);
       await saySafe(
-        "Those were all the DIY steps. Say solved if it worked, or technician if not."
+        "Those were all the DIY steps. Say solved if it worked, or technician if not.",
+        true
       );
       if (run.cancelled) return;
       const final = (await hearSafe()).toLowerCase();
       if (run.cancelled) return;
+      setChoices([]);
       if (/tech|person|help|not|no|still/.test(final)) {
         await createAndRoute(
           "TECHNICIAN",
@@ -342,18 +430,26 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
 
     return () => {
       run.cancelled = true;
+      tapResolveRef.current = null;
       stopSpeaking();
     };
   }, [createAndRoute, onExit, router]);
 
   function leave() {
     runRef.current.cancelled = true;
+    tapResolveRef.current = null;
     stopSpeaking();
     onExit();
   }
 
+  function onTapChoice(choice: Choice) {
+    if (wave !== "listening") return;
+    const resolve = tapResolveRef.current;
+    if (resolve) resolve(choice.label);
+  }
+
   return (
-    <div className="mx-auto flex min-h-[60vh] max-w-lg flex-col items-center justify-center px-4 text-center">
+    <div className="mx-auto flex min-h-[60vh] max-w-lg flex-col items-center px-4 py-6 text-center">
       <Badge variant="outline" className="mb-4">
         Talk mode
       </Badge>
@@ -370,7 +466,28 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
             : "Ready"}
       </p>
 
-      <p className="mt-4 max-w-md text-lg text-[var(--avero-ink)]">{caption}</p>
+      <p className="mt-4 max-w-md text-lg font-medium text-[var(--avero-ink)]">{prompt}</p>
+
+      {statusLine ? (
+        <p className="mt-2 text-sm text-[var(--avero-teal)]">{statusLine}</p>
+      ) : null}
+
+      {choices.length > 0 ? (
+        <ul className="mt-5 w-full max-w-md space-y-2 text-left">
+          {choices.map((c) => (
+            <li key={c.id}>
+              <button
+                type="button"
+                onClick={() => onTapChoice(c)}
+                disabled={wave !== "listening" || busy}
+                className="w-full rounded-lg border border-[var(--avero-line)] bg-[var(--avero-panel)] px-4 py-3 text-left text-sm text-[var(--avero-ink)] transition enabled:hover:border-[var(--avero-teal)] disabled:opacity-80"
+              >
+                {c.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
 
       {heard ? (
         <p className="mt-3 text-sm text-[var(--avero-muted)]">Heard: “{heard}”</p>
@@ -413,4 +530,14 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
       </div>
     </div>
   );
+}
+
+function lowerIncludesOption(spoken: string, label: string) {
+  const t = spoken.toLowerCase();
+  const words = label
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 3);
+  return words.filter((w) => t.includes(w)).length >= Math.min(2, words.length);
 }
