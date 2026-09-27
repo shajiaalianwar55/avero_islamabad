@@ -3,6 +3,8 @@ export type FlowOutcome = "DIY" | "TECHNICIAN" | "EMERGENCY";
 export type ApplianceDef = {
   id: string;
   name: string;
+  brand: string;
+  yearBought: number;
   category: string;
   room: string;
   icon: string;
@@ -21,10 +23,23 @@ export type DiyGuideStep = {
   success_check: string;
 };
 
+/** Demo home inventory — brands common in Pakistan. Radiator is the primary demo path. */
 export const DEMO_APPLIANCES: ApplianceDef[] = [
   {
+    id: "radiator",
+    name: "Oil-filled room radiator",
+    brand: "Delonghi",
+    yearBought: 2022,
+    category: "plumbing",
+    room: "Living room",
+    icon: "🌡️",
+    blurb: "No heat, weak heat, leak, or unsafe smells — winter heater demo",
+  },
+  {
     id: "kitchen-sink",
-    name: "Kitchen sink",
+    name: "Kitchen sink & faucet",
+    brand: "Master",
+    yearBought: 2021,
     category: "plumbing",
     room: "Kitchen",
     icon: "🚰",
@@ -32,7 +47,9 @@ export const DEMO_APPLIANCES: ApplianceDef[] = [
   },
   {
     id: "bedroom-ac",
-    name: "Bedroom AC",
+    name: "1.5 Ton inverter split AC",
+    brand: "Gree",
+    yearBought: 2023,
     category: "ac",
     room: "Bedroom",
     icon: "❄️",
@@ -40,7 +57,9 @@ export const DEMO_APPLIANCES: ApplianceDef[] = [
   },
   {
     id: "bathroom-geyser",
-    name: "Bathroom geyser",
+    name: "Electric storage geyser",
+    brand: "NasGas",
+    yearBought: 2020,
     category: "geyser",
     room: "Bathroom",
     icon: "🔥",
@@ -48,21 +67,59 @@ export const DEMO_APPLIANCES: ApplianceDef[] = [
   },
   {
     id: "wall-socket",
-    name: "Wall socket",
+    name: "Wall socket / switchboard",
+    brand: "Schneider",
+    yearBought: 2019,
     category: "electrical",
-    room: "Living / bedroom",
+    room: "Living room",
     icon: "🔌",
     blurb: "Sparks, buzzing, burning smell, or no power",
   },
   {
     id: "water-pump",
-    name: "Water motor / pump",
+    name: "Water motor / booster pump",
+    brand: "Super Asia",
+    yearBought: 2022,
     category: "water_pump",
     room: "Utility",
     icon: "⚙️",
     blurb: "Motor not starting, low pressure, or unusual noise",
   },
+  {
+    id: "fridge",
+    name: "Refrigerator",
+    brand: "Dawlance",
+    yearBought: 2021,
+    category: "appliance",
+    room: "Kitchen",
+    icon: "🧊",
+    blurb: "Not cooling, unusual noise, or water leak",
+  },
+  {
+    id: "washer",
+    name: "Front-load washing machine",
+    brand: "Haier",
+    yearBought: 2024,
+    category: "appliance",
+    room: "Laundry",
+    icon: "🧺",
+    blurb: "Won't spin, drains poorly, or error codes",
+  },
+  {
+    id: "ups",
+    name: "UPS / inverter",
+    brand: "PEL",
+    yearBought: 2022,
+    category: "ups_inverter",
+    room: "Living room",
+    icon: "🔋",
+    blurb: "No backup, beeping, or battery issues",
+  },
 ];
+
+export function applianceLabel(a: Pick<ApplianceDef, "brand" | "name" | "yearBought">) {
+  return `${a.brand} ${a.name} (${a.yearBought})`;
+}
 
 const SINK_MCQS: Mcq[] = [
   {
@@ -214,6 +271,96 @@ const PUMP_MCQS: Mcq[] = [
   },
 ];
 
+const FRIDGE_MCQS: Mcq[] = [
+  {
+    id: "fridge-symptom",
+    question: "What is wrong with the fridge?",
+    options: [
+      { id: "warm", label: "Not cooling / food getting warm", score: { TECHNICIAN: 2 } },
+      { id: "noise", label: "Loud or strange noise", score: { DIY: 1, TECHNICIAN: 1 } },
+      { id: "leak", label: "Water pooling underneath", score: { DIY: 1, TECHNICIAN: 1 } },
+    ],
+  },
+  {
+    id: "fridge-power",
+    question: "Is the fridge getting power (light on when door opens)?",
+    options: [
+      { id: "yes", label: "Yes — light works", score: { TECHNICIAN: 1 } },
+      { id: "no", label: "No power / dead", score: { DIY: 1, TECHNICIAN: 1 } },
+      { id: "trip", label: "Breaker trips when it runs", score: { EMERGENCY: 2, TECHNICIAN: 1 } },
+    ],
+  },
+  {
+    id: "fridge-safety",
+    question: "Any burning smell from the compressor or wiring?",
+    options: [
+      { id: "no", label: "No burning smell", score: { DIY: 1, TECHNICIAN: 1 } },
+      { id: "yes", label: "Yes — burning smell", score: { EMERGENCY: 3 } },
+      { id: "unsure", label: "Not sure", score: { TECHNICIAN: 1 } },
+    ],
+  },
+];
+
+const WASHER_MCQS: Mcq[] = [
+  {
+    id: "washer-symptom",
+    question: "What is the washing machine doing?",
+    options: [
+      { id: "spin", label: "Won't spin / clothes stay wet", score: { TECHNICIAN: 2 } },
+      { id: "drain", label: "Won't drain", score: { DIY: 1, TECHNICIAN: 1 } },
+      { id: "error", label: "Shows an error code", score: { TECHNICIAN: 2 } },
+    ],
+  },
+  {
+    id: "washer-load",
+    question: "Is the load balanced and the filter/lint trap clear?",
+    options: [
+      { id: "ok", label: "Load looks fine; filter checked", score: { TECHNICIAN: 2 } },
+      { id: "heavy", label: "Might be overloaded / unbalanced", score: { DIY: 2 } },
+      { id: "unsure", label: "Haven't checked", score: { DIY: 1 } },
+    ],
+  },
+  {
+    id: "washer-safety",
+    question: "Any water near the power cord or burning smell?",
+    options: [
+      { id: "no", label: "Dry and no smell", score: { DIY: 1 } },
+      { id: "wet", label: "Water near the plug / cord", score: { EMERGENCY: 3 } },
+      { id: "burn", label: "Burning smell", score: { EMERGENCY: 3 } },
+    ],
+  },
+];
+
+const UPS_MCQS: Mcq[] = [
+  {
+    id: "ups-symptom",
+    question: "What is the UPS / inverter doing?",
+    options: [
+      { id: "nobackup", label: "No backup when lights go out", score: { TECHNICIAN: 2 } },
+      { id: "beep", label: "Constant beeping / alarm", score: { DIY: 1, TECHNICIAN: 1 } },
+      { id: "dead", label: "Completely dead / won't switch on", score: { TECHNICIAN: 2 } },
+    ],
+  },
+  {
+    id: "ups-battery",
+    question: "How old is the battery, roughly?",
+    options: [
+      { id: "new", label: "Under 2 years", score: { TECHNICIAN: 1 } },
+      { id: "old", label: "Over 2–3 years (often needs replace)", score: { DIY: 1, TECHNICIAN: 1 } },
+      { id: "unsure", label: "Not sure", score: { TECHNICIAN: 1 } },
+    ],
+  },
+  {
+    id: "ups-safety",
+    question: "Any burning smell, swollen battery, or smoke?",
+    options: [
+      { id: "no", label: "No — looks normal", score: { DIY: 1, TECHNICIAN: 1 } },
+      { id: "yes", label: "Yes — smell, swelling, or smoke", score: { EMERGENCY: 3 } },
+      { id: "hot", label: "Unusually hot to touch", score: { EMERGENCY: 2, TECHNICIAN: 1 } },
+    ],
+  },
+];
+
 const GENERIC_MCQS: Mcq[] = [
   {
     id: "gen-urgency",
@@ -250,6 +397,9 @@ export const APPLIANCE_MCQS: Record<string, Mcq[]> = {
   "bathroom-geyser": GEYSER_MCQS,
   "wall-socket": SOCKET_MCQS,
   "water-pump": PUMP_MCQS,
+  fridge: FRIDGE_MCQS,
+  washer: WASHER_MCQS,
+  ups: UPS_MCQS,
   custom: GENERIC_MCQS,
 };
 
@@ -317,6 +467,52 @@ export const APPLIANCE_DIY: Record<string, DiyGuideStep[]> = {
       success_check: "The symptom improves without new warning signs.",
     },
   ],
+  fridge: [
+    {
+      order: 1,
+      instruction: "Confirm the fridge is plugged in firmly and the wall socket works with another device.",
+      success_check: "Power is reaching the fridge (interior light or display on).",
+    },
+    {
+      order: 2,
+      instruction: "Check that the thermostat is not set to off / minimum, and give it 30 minutes after any change.",
+      success_check: "Settings look correct; compressor may start humming.",
+    },
+    {
+      order: 3,
+      instruction: "Clear dust from the rear / bottom vents if safely reachable. Do not force panels.",
+      success_check: "Vents are clearer and there is no burning smell.",
+    },
+  ],
+  washer: [
+    {
+      order: 1,
+      instruction: "Redistribute the load so clothes are even, and close the door firmly.",
+      success_check: "Door locks and cycle can start without immediate error.",
+    },
+    {
+      order: 2,
+      instruction: "Check and clean the drain filter / coin trap if your Haier model has one (bucket ready).",
+      success_check: "Filter is clear of lint and small objects.",
+    },
+    {
+      order: 3,
+      instruction: "Run a short rinse/spin. If it still won't drain or smells burnt, stop and escalate.",
+      success_check: "Water drains and spin completes without burning smell.",
+    },
+  ],
+  ups: [
+    {
+      order: 1,
+      instruction: "Confirm wall power to the UPS, then check battery terminals are tight (power off first if you open the case).",
+      success_check: "UPS powers on without smoke or strong burning smell.",
+    },
+    {
+      order: 2,
+      instruction: "Note the beeping pattern from the manual if possible; reset once using the front button.",
+      success_check: "Alarm stops or changes to a normal status light.",
+    },
+  ],
 };
 
 export function scoreOutcome(
@@ -343,12 +539,17 @@ export function scoreOutcome(
 
 export function buildProblemSummary(input: {
   applianceName: string;
+  brand?: string;
+  yearBought?: number;
   room: string;
   notes: string;
   answers: Array<{ question: string; answer: string }>;
 }) {
+  const identity = [input.brand, input.applianceName, input.yearBought ? `bought ${input.yearBought}` : null]
+    .filter(Boolean)
+    .join(" ");
   const lines = [
-    `${input.applianceName} (${input.room})`,
+    `${identity} (${input.room})`,
     input.notes.trim() || "User reported a home problem.",
     ...input.answers.map((a) => `${a.question} → ${a.answer}`),
   ];

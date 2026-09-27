@@ -16,6 +16,7 @@ import {
   APPLIANCE_DIY,
   APPLIANCE_MCQS,
   DEMO_APPLIANCES,
+  applianceLabel,
   buildProblemSummary,
   scoreOutcome,
   type ApplianceDef,
@@ -60,6 +61,8 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
       setBusy(true);
       const description = buildProblemSummary({
         applianceName: app.name,
+        brand: app.brand,
+        yearBought: app.yearBought,
         room: app.room,
         notes:
           notes ||
@@ -146,7 +149,7 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
       if (run.cancelled) return;
 
       await saySafe(
-        "Hi, I'm Avero. Tell me which appliance has a problem. You can say kitchen sink, bedroom A C, bathroom geyser, wall socket, water pump, or say add new."
+        "Hi, I'm Avero. Tell me which appliance has a problem. You can say radiator, kitchen sink, Gree A C, Dawlance fridge, Haier washing machine, or say add new."
       );
       if (run.cancelled) return;
       setPhase("appliance");
@@ -161,12 +164,20 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
         }
         const lower = spoken.toLowerCase();
         if (/add|new|other|custom/.test(lower)) {
+          await saySafe("What brand is it? For example Haier, Dawlance, Gree, or Orient.");
+          const brand = (await hearSafe()) || "Haier";
+          if (run.cancelled) return;
           await saySafe("What should we call this appliance?");
           const name = (await hearSafe()) || "Home appliance";
           if (run.cancelled) return;
+          await saySafe("What year was it bought? Say a year like twenty twenty three.");
+          const yearSpoken = await hearSafe();
+          const yearMatch = yearSpoken.match(/20\d{2}|19\d{2}/);
           chosen = {
             id: "custom",
             name: name.trim().slice(0, 40),
+            brand: brand.trim().slice(0, 30),
+            yearBought: yearMatch ? Number(yearMatch[0]) : 2023,
             category: "appliance",
             room: "Home",
             icon: "🏠",
@@ -177,20 +188,26 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
         chosen =
           DEMO_APPLIANCES.find((a) => {
             const n = a.name.toLowerCase();
+            const brand = a.brand.toLowerCase();
             return (
+              lower.includes(brand) ||
               lower.includes(n) ||
               n.split(/\s+/).some((w) => w.length > 3 && lower.includes(w)) ||
+              (a.id === "radiator" && /radiator|heater|oil\s*filled/.test(lower)) ||
               (a.id === "bedroom-ac" && /\bac\b|air\s*con/.test(lower)) ||
               (a.id === "water-pump" && /pump|motor/.test(lower)) ||
               (a.id === "wall-socket" && /socket|outlet|plug/.test(lower)) ||
-              (a.id === "kitchen-sink" && /sink|kitchen/.test(lower)) ||
-              (a.id === "bathroom-geyser" && /geyser|heater|hot\s*water/.test(lower))
+              (a.id === "kitchen-sink" && /sink|kitchen|faucet/.test(lower)) ||
+              (a.id === "bathroom-geyser" && /geyser|heater|hot\s*water/.test(lower)) ||
+              (a.id === "fridge" && /fridge|refrigerator/.test(lower)) ||
+              (a.id === "washer" && /wash|laundry/.test(lower)) ||
+              (a.id === "ups" && /\bups\b|inverter/.test(lower))
             );
           }) || null;
 
         if (!chosen) {
           await saySafe(
-            `I heard ${spoken}. Please say kitchen sink, bedroom A C, bathroom geyser, wall socket, or water pump.`
+            `I heard ${spoken}. Please say a brand and appliance, like Gree A C, Dawlance fridge, or Haier washing machine.`
           );
         }
       }
@@ -204,7 +221,7 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
 
       setAppliance(chosen);
       await saySafe(
-        `Okay, ${chosen.name}. I'll ask a few short questions. Answer with option one, two, or three, or say the answer in your own words.`
+        `Okay, ${applianceLabel(chosen)}. I'll ask a few short questions. Answer with option one, two, or three, or say the answer in your own words.`
       );
       if (run.cancelled) return;
 
@@ -361,7 +378,7 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
 
       {appliance ? (
         <p className="mt-2 text-xs text-[var(--avero-muted)]">
-          {appliance.name}
+          {appliance.name} · {appliance.brand} · {appliance.yearBought}
           {phase === "questions" ? ` · Q${mcqIndex + 1}` : ""}
           {phase === "diy" ? ` · DIY step ${diyStep + 1}` : ""}
           {outcome ? ` · ${outcome}` : ""}

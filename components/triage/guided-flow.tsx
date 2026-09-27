@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,15 +12,22 @@ import { DemoProgress } from "@/components/demo/progress-steps";
 import { VoiceTalkMode } from "@/components/voice/voice-talk-mode";
 import { ISLAMABAD_AREAS } from "@/types";
 import {
-  APPLIANCE_DIY,
-  APPLIANCE_MCQS,
   DEMO_APPLIANCES,
+  applianceLabel,
   buildProblemSummary,
-  scoreOutcome,
   type ApplianceDef,
-  type FlowOutcome,
-  type Mcq,
 } from "@/lib/demo/appliance-flows";
+import {
+  answerAndContinue,
+  createSession,
+  nextStep,
+  resolveKnowledgeBase,
+  type DiagnosticKnowledgeBase,
+  type DiagnosticQuestion,
+  type DiagnosticResult,
+  type DiagnosticSession,
+  type PathOutcome,
+} from "@/lib/diagnostics";
 
 type Phase = "report" | "appliance" | "questions" | "decision" | "diy";
 
@@ -32,30 +39,25 @@ export function GuidedIncidentFlow() {
   const [notes, setNotes] = useState("");
   const [appliance, setAppliance] = useState<ApplianceDef | null>(null);
   const [customName, setCustomName] = useState("");
+  const [customBrand, setCustomBrand] = useState("Haier");
+  const [customYear, setCustomYear] = useState(2023);
   const [customCategory, setCustomCategory] = useState("appliance");
   const [addingCustom, setAddingCustom] = useState(false);
-  const [mcqIndex, setMcqIndex] = useState(0);
-  const [answers, setAnswers] = useState<
-    Array<{
-      question: string;
-      answer: string;
-      scores: Parameters<typeof scoreOutcome>[0][number]["scores"];
-    }>
-  >([]);
-  const [outcome, setOutcome] = useState<FlowOutcome | null>(null);
+
+  const [kb, setKb] = useState<DiagnosticKnowledgeBase | null>(null);
+  const [session, setSession] = useState<DiagnosticSession | null>(null);
+  const [currentQuestion, setCurrentQuestion] = useState<DiagnosticQuestion | null>(null);
+  const [result, setResult] = useState<DiagnosticResult | null>(null);
+  const [outcome, setOutcome] = useState<PathOutcome | null>(null);
   const [diyStep, setDiyStep] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const mcqs: Mcq[] = useMemo(() => {
-    if (!appliance) return [];
-    return APPLIANCE_MCQS[appliance.id] || APPLIANCE_MCQS.custom;
-  }, [appliance]);
-
-  const diySteps = useMemo(() => {
-    if (!appliance) return APPLIANCE_DIY.custom;
-    return APPLIANCE_DIY[appliance.id] || APPLIANCE_DIY.custom;
-  }, [appliance]);
+  const diySteps = result?.diySteps ?? [];
+  const answerRows =
+    result?.answers.map((a) => ({ question: a.prompt, answer: a.label })) ??
+    session?.answers.map((a) => ({ question: a.prompt, answer: a.label })) ??
+    [];
 
   const progressStep =
     phase === "report"
@@ -77,12 +79,36 @@ export function GuidedIncidentFlow() {
     );
   }
 
-  function selectAppliance(a: ApplianceDef) {
+  function beginDiagnostics(a: ApplianceDef) {
+    const knowledge = resolveKnowledgeBase({
+      applianceId: a.id,
+      category: a.category,
+      nameHint: `${a.brand} ${a.name}`,
+    });
+    const sess = createSession(knowledge);
+    const step = nextStep(knowledge, sess);
     setAppliance(a);
-    setAnswers([]);
-    setMcqIndex(0);
+    setKb(knowledge);
+    setResult(null);
     setOutcome(null);
+    setDiyStep(0);
+    setError(null);
+
+    if (step.stopped) {
+      setSession(sess);
+      setCurrentQuestion(null);
+      setResult(step);
+      setOutcome(step.outcome);
+      setPhase("decision");
+      return;
+    }
+    setSession(step.session);
+    setCurrentQuestion(step.question);
     setPhase("questions");
+  }
+
+  function selectAppliance(a: ApplianceDef) {
+    beginDiagnostics(a);
   }
 
   function addCustomAppliance() {
@@ -90,6 +116,8 @@ export function GuidedIncidentFlow() {
     selectAppliance({
       id: "custom",
       name: customName.trim(),
+      brand: customBrand.trim() || "Unknown",
+      yearBought: customYear,
       category: customCategory,
       room: "Home",
       icon: "🏠",
@@ -98,23 +126,18 @@ export function GuidedIncidentFlow() {
     setAddingCustom(false);
   }
 
-  function answerMcq(option: Mcq["options"][number]) {
-    const q = mcqs[mcqIndex];
-    if (!q) return;
-    const nextAnswers = [
-      ...answers,
-      { question: q.question, answer: option.label, scores: option.score },
-    ];
-    setAnswers(nextAnswers);
-    if (mcqIndex + 1 < mcqs.length) {
-      setMcqIndex(mcqIndex + 1);
+  function answerDiagnostic(optionId: string) {
+    if (!kb || !session || !currentQuestion) return;
+    const step = answerAndContinue(kb, session, currentQuestion, optionId);
+    if (step.stopped) {
+      setCurrentQuestion(null);
+      setResult(step);
+      setOutcome(step.outcome);
+      setPhase("decision");
       return;
     }
-    const result = scoreOutcome(
-      nextAnswers.map((a) => ({ optionId: a.answer, scores: a.scores }))
-    );
-    setOutcome(result.outcome);
-    setPhase("decision");
+    setSession(step.session);
+    setCurrentQuestion(step.question);
   }
 
   async function continueTechnician() {
@@ -124,9 +147,11 @@ export function GuidedIncidentFlow() {
     try {
       const description = buildProblemSummary({
         applianceName: appliance.name,
+        brand: appliance.brand,
+        yearBought: appliance.yearBought,
         room: appliance.room,
-        notes,
-        answers: answers.map((a) => ({ question: a.question, answer: a.answer })),
+        notes: [notes, result?.explanation].filter(Boolean).join(". "),
+        answers: answerRows,
       });
       const res = await fetch("/api/incidents", {
         method: "POST",
@@ -137,7 +162,6 @@ export function GuidedIncidentFlow() {
       if (!json.ok) throw new Error(json.error?.message || "Failed");
       const id = json.data.incident.id as string;
 
-      // Force technician path for offers even if API classified differently
       const sr = await fetch(`/api/incidents/${id}/service-request`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -162,11 +186,15 @@ export function GuidedIncidentFlow() {
     try {
       const description = buildProblemSummary({
         applianceName: appliance.name,
+        brand: appliance.brand,
+        yearBought: appliance.yearBought,
         room: appliance.room,
-        notes: notes || "Emergency signs reported during guided questions",
-        answers: answers.map((a) => ({ question: a.question, answer: a.answer })),
+        notes:
+          notes ||
+          result?.explanation ||
+          "Emergency signs reported during guided questions",
+        answers: answerRows,
       });
-      // Ensure emergency keywords for safety gate
       const withHazard = `${description}. Possible hazard: burning smell sparks or gas smell reported.`;
       const res = await fetch("/api/incidents", {
         method: "POST",
@@ -185,12 +213,13 @@ export function GuidedIncidentFlow() {
   async function markSolved() {
     setBusy(true);
     try {
-      // Record a resolved DIY incident for history context
       const description = buildProblemSummary({
         applianceName: appliance?.name || "Appliance",
+        brand: appliance?.brand,
+        yearBought: appliance?.yearBought,
         room: appliance?.room || "Home",
         notes: notes || "Resolved via guided DIY",
-        answers: answers.map((a) => ({ question: a.question, answer: a.answer })),
+        answers: answerRows,
       });
       await fetch("/api/incidents", {
         method: "POST",
@@ -211,6 +240,8 @@ export function GuidedIncidentFlow() {
     await continueTechnician();
   }
 
+  const askedCount = session?.asked.length ?? result?.answers.length ?? 0;
+
   return (
     <div className="space-y-4">
       <DemoProgress forceStep={progressStep} />
@@ -229,8 +260,8 @@ export function GuidedIncidentFlow() {
               Something broke? Tell us what&apos;s wrong.
             </h2>
             <p className="mt-3 max-w-xl text-[var(--avero-muted)]">
-              Pick the appliance, answer a few questions, and Avero will choose DIY,
-              technician, or emergency — step by step.
+              Pick the appliance — Avero asks dynamic questions (not a fixed quiz) until DIY,
+              technician, or emergency is clear.
             </p>
             <p className="mt-6 text-base font-semibold text-[var(--avero-teal)]">
               Tap to continue →
@@ -265,8 +296,7 @@ export function GuidedIncidentFlow() {
                   Just talk — Avero speaks and listens
                 </p>
                 <p className="mt-1 text-sm text-[var(--avero-muted)]">
-                  Voice waves only. No tapping through questions. Works best in Chrome
-                  or Edge with mic on.
+                  Voice waves only. Works best in Chrome or Edge with mic on.
                 </p>
               </div>
             </div>
@@ -293,7 +323,7 @@ export function GuidedIncidentFlow() {
               id="notes"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="e.g. Water under the sink when I wash dishes…"
+              placeholder="e.g. Radiator stays cold even on high…"
             />
           </div>
         </div>
@@ -306,7 +336,8 @@ export function GuidedIncidentFlow() {
               Which appliance is it?
             </h2>
             <p className="mt-1 text-sm text-[var(--avero-muted)]">
-              Choose one from this home, or add a new appliance.
+              Demo highlight: <strong>Delonghi radiator</strong> — deep diagnostic tree. Other
+              appliances use the same engine.
             </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -315,13 +346,25 @@ export function GuidedIncidentFlow() {
                 key={a.id}
                 type="button"
                 onClick={() => selectAppliance(a)}
-                className="rounded-xl border border-[var(--avero-line)] bg-[var(--avero-panel)] p-4 text-left transition hover:border-[var(--avero-teal)]"
+                className={`rounded-xl border bg-[var(--avero-panel)] p-4 text-left transition hover:border-[var(--avero-teal)] ${
+                  a.id === "radiator"
+                    ? "border-2 border-[var(--avero-teal)]"
+                    : "border-[var(--avero-line)]"
+                }`}
               >
+                {a.id === "radiator" && (
+                  <Badge className="mb-2" variant="default">
+                    Demo path
+                  </Badge>
+                )}
                 <p className="text-2xl" aria-hidden>
                   {a.icon}
                 </p>
-                <p className="mt-2 font-semibold text-[var(--avero-ink)]">{a.name}</p>
-                <p className="text-xs text-[var(--avero-muted)]">{a.room}</p>
+                <p className="mt-2 font-semibold text-[var(--avero-ink)]">{a.brand}</p>
+                <p className="text-sm text-[var(--avero-ink)]">{a.name}</p>
+                <p className="mt-1 text-xs text-[var(--avero-muted)]">
+                  {a.room} · Bought {a.yearBought}
+                </p>
                 <p className="mt-2 text-sm text-[var(--avero-muted)]">{a.blurb}</p>
               </button>
             ))}
@@ -332,7 +375,7 @@ export function GuidedIncidentFlow() {
             >
               <p className="font-semibold text-[var(--avero-ink)]">+ Add another appliance</p>
               <p className="mt-1 text-sm text-[var(--avero-muted)]">
-                Not in the list? Name it and continue.
+                Brand, name, and year bought — e.g. Orient AC 2024.
               </p>
             </button>
           </div>
@@ -343,11 +386,48 @@ export function GuidedIncidentFlow() {
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="space-y-1">
-                  <Label>Name</Label>
+                  <Label>Brand (Pakistan market)</Label>
+                  <select
+                    value={customBrand}
+                    onChange={(e) => setCustomBrand(e.target.value)}
+                    className="flex h-10 w-full rounded-md border border-[var(--avero-line)] bg-white px-3 text-sm"
+                  >
+                    {[
+                      "Haier",
+                      "Dawlance",
+                      "Gree",
+                      "Orient",
+                      "PEL",
+                      "Waves",
+                      "Super Asia",
+                      "NasGas",
+                      "Delonghi",
+                      "Samsung",
+                      "LG",
+                      "Other",
+                    ].map((b) => (
+                      <option key={b} value={b}>
+                        {b}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <Label>Name / model</Label>
                   <Input
                     value={customName}
                     onChange={(e) => setCustomName(e.target.value)}
-                    placeholder="e.g. Fridge, UPS, washing machine"
+                    placeholder="e.g. Radiator, fridge, UPS"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label>Year bought</Label>
+                  <Input
+                    type="number"
+                    min={1990}
+                    max={2026}
+                    value={customYear}
+                    onChange={(e) => setCustomYear(Number(e.target.value) || 2023)}
                   />
                 </div>
                 <div className="space-y-1">
@@ -390,51 +470,43 @@ export function GuidedIncidentFlow() {
         </div>
       )}
 
-      {phase === "questions" && appliance && mcqs[mcqIndex] && (
+      {phase === "questions" && appliance && currentQuestion && (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline">
-              {appliance.icon} {appliance.name}
+              {appliance.icon} {applianceLabel(appliance)}
             </Badge>
-            <Badge>
-              Question {mcqIndex + 1} of {mcqs.length}
-            </Badge>
+            <Badge variant="outline">{kb?.title}</Badge>
+            <Badge>Question {askedCount + 1}</Badge>
           </div>
+          <p className="text-xs text-[var(--avero-muted)]">
+            Questions adapt as answers narrow possibilities — not a fixed quiz length.
+          </p>
           <Card>
             <CardHeader>
-              <CardTitle className="text-xl">{mcqs[mcqIndex].question}</CardTitle>
+              <CardTitle className="text-xl">{currentQuestion.prompt}</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col gap-2">
-              {mcqs[mcqIndex].options.map((opt) => (
+              {currentQuestion.options.map((opt) => (
                 <Button
                   key={opt.id}
                   type="button"
                   variant="secondary"
                   className="h-auto justify-start whitespace-normal px-4 py-3 text-left"
-                  onClick={() => answerMcq(opt)}
+                  onClick={() => answerDiagnostic(opt.id)}
                 >
                   {opt.label}
                 </Button>
               ))}
             </CardContent>
           </Card>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              if (mcqIndex === 0) setPhase("appliance");
-              else {
-                setMcqIndex(mcqIndex - 1);
-                setAnswers(answers.slice(0, -1));
-              }
-            }}
-          >
-            Back
+          <Button type="button" variant="outline" onClick={() => setPhase("appliance")}>
+            Back to appliances
           </Button>
         </div>
       )}
 
-      {phase === "decision" && outcome && appliance && (
+      {phase === "decision" && outcome && appliance && result && (
         <div className="space-y-4">
           <div className="flex flex-wrap gap-2">
             <Badge
@@ -448,7 +520,10 @@ export function GuidedIncidentFlow() {
             >
               {outcome}
             </Badge>
-            <Badge variant="outline">{appliance.name}</Badge>
+            <Badge variant="outline">{applianceLabel(appliance)}</Badge>
+            {result.topHypothesis && (
+              <Badge variant="outline">{result.topHypothesis.label}</Badge>
+            )}
           </div>
           <Card>
             <CardHeader>
@@ -461,23 +536,41 @@ export function GuidedIncidentFlow() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm text-[var(--avero-muted)]">
+              <p className="text-base text-[var(--avero-ink)]">{result.explanation}</p>
               <p>
-                Based on your answers about the <strong>{appliance.name}</strong>
+                Based on {result.answers.length} adaptive question
+                {result.answers.length === 1 ? "" : "s"} about the{" "}
+                <strong>{applianceLabel(appliance)}</strong>
                 {notes ? ` (“${notes.slice(0, 80)}${notes.length > 80 ? "…" : ""}”)` : ""}.
               </p>
               <ul className="list-disc pl-5">
-                {answers.map((a) => (
-                  <li key={a.question}>
-                    <span className="text-[var(--avero-ink)]">{a.answer}</span>
+                {result.answers.map((a) => (
+                  <li key={`${a.questionId}-${a.optionId}`}>
+                    <span className="text-[var(--avero-ink)]">{a.label}</span>
                   </li>
                 ))}
               </ul>
+              {result.ranked.slice(0, 3).length > 1 && (
+                <p className="text-xs">
+                  Also considered:{" "}
+                  {result.ranked
+                    .slice(1, 3)
+                    .map((r) => r.hypothesis.label)
+                    .join("; ")}
+                </p>
+              )}
             </CardContent>
           </Card>
           {error && <p className="text-sm text-[var(--avero-danger)]">{error}</p>}
           <div className="rounded-lg border border-[var(--avero-teal)]/40 bg-[var(--avero-teal)]/5 p-4">
             {outcome === "DIY" && (
-              <Button size="lg" onClick={() => { setDiyStep(0); setPhase("diy"); }}>
+              <Button
+                size="lg"
+                onClick={() => {
+                  setDiyStep(0);
+                  setPhase("diy");
+                }}
+              >
                 Start DIY guidance →
               </Button>
             )}
@@ -500,15 +593,19 @@ export function GuidedIncidentFlow() {
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="success">DIY</Badge>
             <Badge variant="outline">
-              Step {diyStep + 1} of {diySteps.length}
+              Step {diyStep + 1} of {Math.max(diySteps.length, 1)}
             </Badge>
           </div>
           <Card>
             <CardHeader>
-              <CardTitle>{diySteps[diyStep]?.instruction}</CardTitle>
+              <CardTitle>
+                {diySteps[diyStep]?.instruction ||
+                  "Try the simple checks suggested, then confirm if it helped."}
+              </CardTitle>
             </CardHeader>
             <CardContent className="text-sm text-[var(--avero-muted)]">
-              Success check: {diySteps[diyStep]?.success_check}
+              Success check:{" "}
+              {diySteps[diyStep]?.success_check || "Symptom improves with no new warning signs."}
             </CardContent>
           </Card>
           <div className="flex flex-wrap gap-2">
@@ -526,7 +623,6 @@ export function GuidedIncidentFlow() {
             </Button>
           </div>
 
-          {/* Persistent solved CTA */}
           <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--avero-line)] bg-[var(--avero-panel)]/95 px-4 py-3 backdrop-blur">
             <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-[var(--avero-muted)]">
