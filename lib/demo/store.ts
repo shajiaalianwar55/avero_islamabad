@@ -242,7 +242,14 @@ function createSeedStore(): DemoStore {
   };
 }
 
-let store: DemoStore = createSeedStore();
+const globalForDemo = globalThis as unknown as { __averoDemoStore?: DemoStore };
+
+if (!globalForDemo.__averoDemoStore) {
+  globalForDemo.__averoDemoStore = createSeedStore();
+}
+
+/** Module binding kept in sync with globalThis so HMR does not wipe demo offers/bookings. */
+let store: DemoStore = globalForDemo.__averoDemoStore;
 
 export function getDemoStore(): DemoStore {
   return store;
@@ -250,6 +257,7 @@ export function getDemoStore(): DemoStore {
 
 export function resetDemoStore(): DemoStore {
   store = createSeedStore();
+  globalForDemo.__averoDemoStore = store;
   return store;
 }
 

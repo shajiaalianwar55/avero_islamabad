@@ -31,6 +31,7 @@ export function OfferComparison({ incidentId }: { incidentId: string }) {
   const [offers, setOffers] = useState<OfferRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [bookingId, setBookingId] = useState<string | null>(null);
+  const [bookError, setBookError] = useState<string | null>(null);
 
   const load = useCallback(async (id: string) => {
     const res = await fetch(`/api/service-requests/${id}/offers`);
@@ -88,6 +89,7 @@ export function OfferComparison({ incidentId }: { incidentId: string }) {
   async function loadDemo() {
     if (!srId) return;
     setLoading(true);
+    setBookError(null);
     await fetch("/api/demo/offers", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -98,15 +100,75 @@ export function OfferComparison({ incidentId }: { incidentId: string }) {
   }
 
   async function book(offerId: string) {
+    if (!offerId) {
+      setBookError("No offer selected.");
+      return;
+    }
+    setBookError(null);
     setBookingId(offerId);
-    const res = await fetch("/api/bookings", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ offer_id: offerId }),
-    });
-    const json = await res.json();
-    setBookingId(null);
-    if (json.ok) router.push(`/booking/${json.data.booking.id}`);
+
+    try {
+      async function postBooking(id: string) {
+        const res = await fetch("/api/bookings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ offer_id: id }),
+        });
+        return res.json();
+      }
+
+      let json = await postBooking(offerId);
+
+      // Demo in-memory store can lose offers after a server restart / HMR —
+      // recreate the service request + offers and book the recommended one.
+      if (
+        !json.ok &&
+        (json.error?.code === "NOT_FOUND" || json.error?.code === "VALIDATION_ERROR")
+      ) {
+        let id = srId;
+        const srRes = await fetch(`/api/incidents/${incidentId}/service-request`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        });
+        const srJson = await srRes.json();
+        if (srJson.ok) {
+          id = srJson.data.serviceRequest.id as string;
+          setSrId(id);
+        }
+        if (id) {
+          await fetch("/api/demo/offers", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ service_request_id: id }),
+          });
+          await load(id);
+          const refreshed = await fetch(`/api/service-requests/${id}/offers`).then((r) =>
+            r.json()
+          );
+          const rows = (refreshed.ok ? refreshed.data.offers : []) as OfferRow[];
+          const match =
+            rows.find((o) => o.offer.id === offerId) ||
+            rows.find((o) => o.badges?.includes("Recommended")) ||
+            rows[0];
+          if (match) {
+            json = await postBooking(match.offer.id);
+          }
+        }
+      }
+
+      if (json.ok) {
+        router.push(`/booking/${json.data.booking.id}`);
+        return;
+      }
+      setBookError(
+        json.error?.message || "Could not book this offer. Try Reload demo offers."
+      );
+    } catch {
+      setBookError("Could not book this offer. Check your connection and try again.");
+    } finally {
+      setBookingId(null);
+    }
   }
 
   const recommended = offers.find((o) => o.badges?.includes("Recommended")) || offers[0];
@@ -126,6 +188,12 @@ export function OfferComparison({ incidentId }: { incidentId: string }) {
       {loading && offers.length === 0 && (
         <p className="rounded-md border border-[var(--avero-line)] bg-[var(--avero-panel)] p-4 text-sm text-[var(--avero-teal)]">
           Matching Islamabad providers and loading demo offers…
+        </p>
+      )}
+
+      {bookError && (
+        <p className="rounded-md border border-[var(--avero-danger)]/40 bg-red-50 px-3 py-2 text-sm text-[var(--avero-danger)]">
+          {bookError}
         </p>
       )}
 
