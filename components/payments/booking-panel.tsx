@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -28,32 +28,38 @@ type BookingData = {
 export function BookingPanel({ bookingId }: { bookingId: string }) {
   const router = useRouter();
   const [data, setData] = useState<BookingData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
 
-  async function refresh() {
-    const res = await fetch(`/api/bookings/${bookingId}`);
-    const json = await res.json();
-    if (json.ok) {
-      setData(json.data);
-      if (json.data.booking?.status === "COMPLETED") setDone(true);
-    }
-  }
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
       const res = await fetch(`/api/bookings/${bookingId}`);
       const json = await res.json();
-      if (!cancelled && json.ok) {
+      if (json.ok) {
         setData(json.data);
         if (json.data.booking?.status === "COMPLETED") setDone(true);
+        return;
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
+      setData(null);
+      setError(
+        json.error?.message ||
+          "Booking not found. Demo data may have reset — book an offer again."
+      );
+    } catch {
+      setData(null);
+      setError("Could not load booking. Check your connection and try again.");
+    } finally {
+      setLoading(false);
+    }
   }, [bookingId]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
 
   async function completeDemoFlow() {
     setBusy(true);
@@ -90,7 +96,29 @@ export function BookingPanel({ bookingId }: { bookingId: string }) {
     await refresh();
   }
 
-  if (!data) return <p className="text-[var(--avero-muted)]">Loading booking…</p>;
+  if (loading && !data) {
+    return <p className="text-[var(--avero-muted)]">Loading booking…</p>;
+  }
+
+  if (error || !data) {
+    return (
+      <div className="space-y-3 rounded-lg border border-[var(--avero-danger)]/40 bg-red-50 p-4">
+        <p className="text-sm text-[var(--avero-danger)]">
+          {error || "Booking not found."}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={() => void refresh()}>
+            Retry
+          </Button>
+          <Link href="/incident/new">
+            <Button type="button" size="sm">
+              Report again →
+            </Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
