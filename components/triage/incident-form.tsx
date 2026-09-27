@@ -83,7 +83,18 @@ export function IncidentForm() {
           placeholder="Example: There is water under my kitchen sink."
           required
         />
-        <VoiceInput onText={(t) => setDescription((prev) => (prev ? `${prev} ${t}` : t))} />
+        <VoiceInput
+          onText={(t) =>
+            setDescription((prev) => {
+              const next = t.trim();
+              if (!next) return prev;
+              if (!prev.trim()) return next;
+              // Append once if user already typed something; avoid re-stacking the same phrase
+              if (prev.includes(next)) return prev;
+              return `${prev.trim()} ${next}`;
+            })
+          }
+        />
       </div>
       <div className="space-y-2">
         <Label>Photo (optional)</Label>
