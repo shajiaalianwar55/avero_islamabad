@@ -20,14 +20,16 @@ npm install
 npm run dev
 ```
 
-Fill in Supabase + `AI_*` keys when ready. With `NEXT_PUBLIC_DEMO_MODE=true`, the in-memory demo store works without Supabase.
+Fill in Supabase + `AI_*` keys when ready. With `NEXT_PUBLIC_DEMO_MODE=true`, the in-memory demo store works locally without Supabase. Do not use demo mode for a Vercel deployment because function memory and files are not durable.
 
 ### Supabase
 
 1. Create a project
 2. Run `supabase/migrations/001_init.sql`
 3. Run `supabase/seed.sql`
-4. Set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
+4. Set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, and `SUPABASE_SECRET_KEY`
+
+Legacy `NEXT_PUBLIC_SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` values remain supported. For Vercel, add the variables in Project Settings for Production and Preview, set `NEXT_PUBLIC_DEMO_MODE=false`, and redeploy. The secret key must remain server-only.
 
 ## Scripts
 

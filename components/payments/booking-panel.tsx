@@ -106,48 +106,41 @@ export function BookingPanel({ bookingId }: { bookingId: string }) {
   }, [bookingId]);
 
   useEffect(() => {
-    void refresh();
+    const timeoutId = window.setTimeout(() => void refresh(), 0);
+    return () => window.clearTimeout(timeoutId);
   }, [refresh]);
 
   async function completeDemoFlow() {
     setBusy(true);
-    await fetch(`/api/provider/jobs/${bookingId}/status`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: "TECHNICIAN_EN_ROUTE" }),
-    }).catch(() => null);
-    await fetch(`/api/provider/jobs/${bookingId}/status`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: "IN_PROGRESS" }),
-    }).catch(() => null);
-    await fetch(`/api/provider/jobs/${bookingId}/complete`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ work_done: "Demo repair completed" }),
-    }).catch(() => null);
-    const confirmRes = await fetch(`/api/bookings/${bookingId}/confirm-completion`, {
-      method: "POST",
-    });
-    const confirmJson = await confirmRes.json().catch(() => null);
-    if (confirmJson?.ok && confirmJson.data?.repair) {
+    setError(null);
+    try {
+      const confirmRes = await fetch(
+        `/api/bookings/${bookingId}/confirm-completion`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ work_done: "Demo repair completed" }),
+        }
+      );
+      const confirmJson = await confirmRes.json();
+      if (!confirmRes.ok || !confirmJson?.ok || !confirmJson.data?.repair) {
+        throw new Error(
+          confirmJson?.error?.message || "Could not save the completed repair"
+        );
+      }
+
       rememberRepair(repairFromApi(confirmJson.data.repair));
-    } else if (data) {
-      // Server booking gone — still record history locally so the demo completes
-      rememberRepair({
-        id: `local-${bookingId}`,
-        title: `${data.provider?.name || "Technician"} visit`,
-        work_done: "Demo repair completed",
-        provider_name: data.provider?.name ?? null,
-        amount_paid: data.payment?.amount ?? null,
-        completed_at: new Date().toISOString(),
-        warranty_days: data.offer?.warranty_days ?? 30,
-        warranty_remaining_days: data.offer?.warranty_days ?? 30,
-      });
+      setDone(true);
+      router.push("/history");
+    } catch (completionError) {
+      setError(
+        completionError instanceof Error
+          ? completionError.message
+          : "Could not complete the repair"
+      );
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
-    setDone(true);
-    router.push("/history");
   }
 
   if (loading && !data) {

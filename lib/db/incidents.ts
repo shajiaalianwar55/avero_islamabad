@@ -1,4 +1,4 @@
-import { env, hasSupabaseConfig } from "@/lib/env";
+import { env, hasSupabaseAdminConfig } from "@/lib/env";
 import * as demo from "@/lib/demo/store";
 import type {
   DiyPlanRow,
@@ -13,13 +13,18 @@ import type { IncidentStatus } from "@/types";
 
 export function shouldUseDemoStore(): boolean {
   if (env.NEXT_PUBLIC_DEMO_MODE) return true;
-  if (!hasSupabaseConfig() || !env.SUPABASE_SERVICE_ROLE_KEY) return true;
+  if (!hasSupabaseAdminConfig()) return true;
   return false;
 }
 
 async function getAdmin() {
   const { createServiceClient } = await import("@/lib/supabase/admin");
   return createServiceClient();
+}
+
+function failSupabase(error: unknown): never {
+  console.error("Supabase incident operation failed", error);
+  throw error;
 }
 
 export async function createIncident(input: {
@@ -48,8 +53,8 @@ export async function createIncident(input: {
       .single();
     if (error) throw error;
     return data as Incident;
-  } catch {
-    return demo.createIncident(input);
+  } catch (error) {
+    return failSupabase(error);
   }
 }
 
@@ -65,8 +70,8 @@ export async function getIncident(id: string): Promise<Incident | null> {
       .maybeSingle();
     if (error) throw error;
     return (data as Incident) ?? null;
-  } catch {
-    return demo.getIncident(id) ?? null;
+  } catch (error) {
+    return failSupabase(error);
   }
 }
 
@@ -94,8 +99,8 @@ export async function updateIncidentStatus(
       .single();
     if (error) throw error;
     return data as Incident;
-  } catch {
-    return demo.updateIncidentStatus(id, status, resolvedAt);
+  } catch (error) {
+    return failSupabase(error);
   }
 }
 
@@ -121,8 +126,8 @@ export async function addMessage(input: {
       .single();
     if (error) throw error;
     return data as IncidentMessage;
-  } catch {
-    return demo.createMessage(input);
+  } catch (error) {
+    return failSupabase(error);
   }
 }
 
@@ -140,8 +145,8 @@ export async function listMessages(
       .order("created_at", { ascending: true });
     if (error) throw error;
     return (data as IncidentMessage[]) ?? [];
-  } catch {
-    return demo.listMessages(incidentId);
+  } catch (error) {
+    return failSupabase(error);
   }
 }
 
@@ -166,8 +171,8 @@ export async function saveSafetyAssessment(
       .single();
     if (error) throw error;
     return data as SafetyAssessmentRow;
-  } catch {
-    return demo.createSafetyAssessment(input);
+  } catch (error) {
+    return failSupabase(error);
   }
 }
 
@@ -185,8 +190,8 @@ export async function saveTriageDecision(
       .single();
     if (error) throw error;
     return data as TriageDecisionRow;
-  } catch {
-    return demo.createTriageDecision(input);
+  } catch (error) {
+    return failSupabase(error);
   }
 }
 
@@ -208,8 +213,8 @@ export async function getLatestTriageDecision(
       .maybeSingle();
     if (error) throw error;
     return (data as TriageDecisionRow) ?? null;
-  } catch {
-    return demo.getLatestTriageDecision(incidentId) ?? null;
+  } catch (error) {
+    return failSupabase(error);
   }
 }
 
@@ -256,8 +261,8 @@ export async function saveDiyPlan(input: {
       .select();
     if (stepError) throw stepError;
     return { plan: plan as DiyPlanRow, steps: (steps as DiyStepRow[]) ?? [] };
-  } catch {
-    return demo.createDiyPlan(input);
+  } catch (error) {
+    return failSupabase(error);
   }
 }
 
@@ -285,8 +290,8 @@ export async function getDiyPlanForIncident(incidentId: string) {
       plan: plan as DiyPlanRow,
       steps: (steps as DiyStepRow[]) ?? [],
     };
-  } catch {
-    return demo.getDiyPlanForIncident(incidentId);
+  } catch (error) {
+    return failSupabase(error);
   }
 }
 
@@ -309,8 +314,8 @@ export async function createServiceRequest(
       .single();
     if (error) throw error;
     return data as ServiceRequestRow;
-  } catch {
-    return demo.createServiceRequest(input);
+  } catch (error) {
+    return failSupabase(error);
   }
 }
 
@@ -328,8 +333,8 @@ export async function getServiceRequest(
       .maybeSingle();
     if (error) throw error;
     return (data as ServiceRequestRow) ?? null;
-  } catch {
-    return demo.getServiceRequest(id) ?? null;
+  } catch (error) {
+    return failSupabase(error);
   }
 }
 
@@ -342,16 +347,33 @@ export async function ensureServiceRequestForIncident(
   }
   try {
     const supabase = await getAdmin();
-    const { data: existing } = await supabase
+    const { data: existing, error } = await supabase
       .from("service_requests")
       .select("*")
       .eq("incident_id", incidentId)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
+    if (error) throw error;
     if (existing) return existing as ServiceRequestRow;
-  } catch {
-    /* fall through to demo */
+
+    const incident = await getIncident(incidentId);
+    if (!incident) throw new Error("Incident not found");
+    const category = opts?.category || incident.category_guess || "plumbing";
+    return createServiceRequest({
+      incident_id: incidentId,
+      category,
+      area: opts?.area || "F-10",
+      title: opts?.title || `${category} service request`,
+      problem_summary:
+        opts?.summary || incident.initial_description || "Home issue reported via Avero",
+      symptoms: [incident.initial_description],
+      urgency: "medium",
+      hazard_notes: [],
+      actions_tried: [],
+      preferred_time: null,
+    });
+  } catch (error) {
+    return failSupabase(error);
   }
-  return demo.ensureServiceRequestForIncident(incidentId, opts);
 }

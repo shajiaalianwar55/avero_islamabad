@@ -133,8 +133,12 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
       typeof window === "undefined" ||
       !window.speechSynthesis
     ) {
-      setUnsupported(true);
-      setPrompt("Voice talk needs Chrome or Edge with mic permission.");
+      queueMicrotask(() => {
+        if (!run.cancelled) {
+          setUnsupported(true);
+          setPrompt("Voice talk needs Chrome or Edge with mic permission.");
+        }
+      });
       return () => {
         run.cancelled = true;
       };
@@ -367,7 +371,7 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
         category: chosen.category,
         nameHint: `${chosen.brand} ${chosen.name}`,
       });
-      let session = createSessionFromIntake(knowledge, intake);
+      const session = createSessionFromIntake(knowledge, intake);
       let step = nextStep(knowledge, session);
       const collected: AnswerRow[] = [
         { question: "What's going wrong?", answer: symptomText },

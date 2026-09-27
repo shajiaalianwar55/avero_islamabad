@@ -9,7 +9,6 @@ import {
   type EngineConfig,
   type Hypothesis,
   type HypothesisId,
-  type NextQuestionResult,
   type PathOutcome,
   type QuestionCondition,
   type StepResult,

@@ -1,4 +1,4 @@
-import { env, hasSupabaseConfig } from "@/lib/env";
+import { env, hasSupabaseAdminConfig } from "@/lib/env";
 import * as demo from "@/lib/demo/store";
 import type { Booking, Payment, RepairRecord, Review } from "@/types/db";
 import type { BookingStatus, PaymentState } from "@/types";
@@ -9,13 +9,18 @@ import {
 
 function shouldUseDemoStore(): boolean {
   if (env.NEXT_PUBLIC_DEMO_MODE) return true;
-  if (!hasSupabaseConfig() || !env.SUPABASE_SERVICE_ROLE_KEY) return true;
+  if (!hasSupabaseAdminConfig()) return true;
   return false;
 }
 
 async function getAdmin() {
   const { createServiceClient } = await import("@/lib/supabase/admin");
   return createServiceClient();
+}
+
+function failSupabase(error: unknown): never {
+  console.error("Supabase booking operation failed", error);
+  throw error;
 }
 
 export async function createBooking(input: {
@@ -68,8 +73,8 @@ export async function createBooking(input: {
     if (payError) throw payError;
 
     return { booking: booking as Booking, payment: payment as Payment };
-  } catch {
-    return demo.createBooking(input);
+  } catch (error) {
+    return failSupabase(error);
   }
 }
 
@@ -85,8 +90,8 @@ export async function getBooking(id: string): Promise<Booking | null> {
       .maybeSingle();
     if (error) throw error;
     return (data as Booking) ?? null;
-  } catch {
-    return demo.getBooking(id) ?? null;
+  } catch (error) {
+    return failSupabase(error);
   }
 }
 
@@ -104,8 +109,8 @@ export async function getPaymentForBooking(
       .maybeSingle();
     if (error) throw error;
     return (data as Payment) ?? null;
-  } catch {
-    return demo.getPaymentForBooking(bookingId) ?? null;
+  } catch (error) {
+    return failSupabase(error);
   }
 }
 
@@ -156,8 +161,8 @@ async function applyBookingStatus(
       .single();
     if (error) throw error;
     return data as Booking;
-  } catch {
-    return demo.updateBookingStatus(bookingId, next);
+  } catch (error) {
+    return failSupabase(error);
   }
 }
 
@@ -207,8 +212,8 @@ async function applyPaymentState(
       .single();
     if (error) throw error;
     return data as Payment;
-  } catch {
-    return demo.updatePaymentState(bookingId, next);
+  } catch (error) {
+    return failSupabase(error);
   }
 }
 
@@ -226,8 +231,29 @@ export async function createRepairRecord(
       .single();
     if (error) throw error;
     return data as RepairRecord;
-  } catch {
-    return demo.createRepairRecord(input);
+  } catch (error) {
+    return failSupabase(error);
+  }
+}
+
+export async function getRepairForBooking(
+  bookingId: string
+): Promise<RepairRecord | null> {
+  if (shouldUseDemoStore()) {
+    return demo.listRepairHistory().find((row) => row.booking_id === bookingId) ?? null;
+  }
+
+  try {
+    const supabase = await getAdmin();
+    const { data, error } = await supabase
+      .from("repair_records")
+      .select("*")
+      .eq("booking_id", bookingId)
+      .maybeSingle();
+    if (error) throw error;
+    return (data as RepairRecord) ?? null;
+  } catch (error) {
+    return failSupabase(error);
   }
 }
 
@@ -251,7 +277,7 @@ export async function createReview(input: {
       .single();
     if (error) throw error;
     return data as Review;
-  } catch {
-    return demo.createReview(input);
+  } catch (error) {
+    return failSupabase(error);
   }
 }

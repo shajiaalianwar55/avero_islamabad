@@ -5,12 +5,16 @@ import {
   createReview,
   getBooking,
   getPaymentForBooking,
+  getRepairForBooking,
   transitionBookingStatus,
   transitionPaymentState,
 } from "@/lib/db/bookings";
 import { getOffer, getProvider } from "@/lib/db/providers";
 import { getIncident, getServiceRequest, updateIncidentStatus } from "@/lib/db/incidents";
-import { onCustomerConfirmedCompletion } from "@/lib/payments/state";
+import {
+  onCustomerConfirmedCompletion,
+  onProviderMarkedComplete,
+} from "@/lib/payments/state";
 import { computeWarrantyExpiresAt } from "@/lib/history/warranty";
 
 const bodySchema = z.object({
@@ -42,6 +46,8 @@ export async function POST(request: Request, context: RouteContext) {
   if (!booking) return fail("NOT_FOUND", "Booking not found", 404);
 
   if (
+    booking.status !== "CONFIRMED" &&
+    booking.status !== "TECHNICIAN_EN_ROUTE" &&
     booking.status !== "AWAITING_CUSTOMER_CONFIRMATION" &&
     booking.status !== "IN_PROGRESS" &&
     booking.status !== "COMPLETED"
@@ -54,12 +60,33 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   try {
-    const payment = await getPaymentForBooking(id);
+    let currentBooking = booking;
+    if (currentBooking.status === "CONFIRMED") {
+      currentBooking =
+        (await transitionBookingStatus(id, "TECHNICIAN_EN_ROUTE")) ?? currentBooking;
+    }
+    if (currentBooking.status === "TECHNICIAN_EN_ROUTE") {
+      currentBooking =
+        (await transitionBookingStatus(id, "IN_PROGRESS")) ?? currentBooking;
+    }
+
+    let payment = await getPaymentForBooking(id);
+    if (currentBooking.status === "IN_PROGRESS") {
+      const providerNext = onProviderMarkedComplete(
+        payment?.state ?? "PROTECTED"
+      );
+      currentBooking =
+        (await transitionBookingStatus(id, providerNext.booking)) ?? currentBooking;
+      if (payment && payment.state !== providerNext.payment) {
+        payment = await transitionPaymentState(id, providerNext.payment);
+      }
+    }
+
     const next = onCustomerConfirmedCompletion(payment?.state ?? "PROTECTED");
 
     const updatedBooking =
-      booking.status === "COMPLETED"
-        ? booking
+      currentBooking.status === "COMPLETED"
+        ? currentBooking
         : await transitionBookingStatus(id, next.booking);
 
     let updatedPayment = payment;
@@ -80,9 +107,9 @@ export async function POST(request: Request, context: RouteContext) {
 
     const completedAt = new Date().toISOString();
     const warrantyDays = offer?.warranty_days ?? 30;
-    let repair = null;
+    let repair = await getRepairForBooking(id);
 
-    if (incident) {
+    if (!repair && incident) {
       repair = await createRepairRecord({
         home_id: incident.home_id,
         asset_id: incident.asset_id,

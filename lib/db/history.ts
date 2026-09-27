@@ -1,4 +1,4 @@
-import { env, hasSupabaseConfig } from "@/lib/env";
+import { env, hasSupabaseAdminConfig } from "@/lib/env";
 import * as demo from "@/lib/demo/store";
 import type { Home, HomeAsset, RepairRecord } from "@/types/db";
 import {
@@ -8,13 +8,18 @@ import {
 
 function shouldUseDemoStore(): boolean {
   if (env.NEXT_PUBLIC_DEMO_MODE) return true;
-  if (!hasSupabaseConfig() || !env.SUPABASE_SERVICE_ROLE_KEY) return true;
+  if (!hasSupabaseAdminConfig()) return true;
   return false;
 }
 
 async function getAdmin() {
   const { createServiceClient } = await import("@/lib/supabase/admin");
   return createServiceClient();
+}
+
+function failSupabase(error: unknown): never {
+  console.error("Supabase history operation failed", error);
+  throw error;
 }
 
 export type HistoryItem = RepairRecord & {
@@ -37,8 +42,8 @@ export async function getHome(
       .maybeSingle();
     if (error) throw error;
     return (data as Home) ?? null;
-  } catch {
-    return demo.getHome(homeId) ?? null;
+  } catch (error) {
+    return failSupabase(error);
   }
 }
 
@@ -55,8 +60,8 @@ export async function listHomeAssets(
       .eq("home_id", homeId);
     if (error) throw error;
     return (data as HomeAsset[]) ?? [];
-  } catch {
-    return demo.getHomeAssets(homeId);
+  } catch (error) {
+    return failSupabase(error);
   }
 }
 
@@ -84,9 +89,8 @@ export async function listRepairHistory(
         .select("*")
         .eq("home_id", homeId);
       assets = (assetData as HomeAsset[]) ?? [];
-    } catch {
-      records = demo.listRepairHistory(homeId);
-      assets = demo.getHomeAssets(homeId);
+    } catch (error) {
+      return failSupabase(error);
     }
   }
 

@@ -22,7 +22,9 @@ export function HistoryTimeline() {
   useEffect(() => {
     let cancelled = false;
     const local = readLocalRepairs();
-    setRepairs(local);
+    queueMicrotask(() => {
+      if (!cancelled) setRepairs(local);
+    });
 
     fetch(`/api/history?t=${Date.now()}`, { cache: "no-store" })
       .then((r) => r.json())

@@ -1,16 +1,21 @@
 import { createClient } from "@supabase/supabase-js";
-import { env, hasSupabaseConfig } from "@/lib/env";
+import {
+  env,
+  hasSupabaseAdminConfig,
+  supabaseSecretKey,
+} from "@/lib/env";
 
 export function createServiceClient() {
-  if (!hasSupabaseConfig() || !env.SUPABASE_SERVICE_ROLE_KEY) {
+  const secretKey = supabaseSecretKey();
+  if (!hasSupabaseAdminConfig() || !secretKey) {
     throw new Error(
-      "Supabase service role is not configured. Set SUPABASE_SERVICE_ROLE_KEY."
+      "Supabase server access is not configured. Set SUPABASE_SECRET_KEY (preferred) or SUPABASE_SERVICE_ROLE_KEY."
     );
   }
 
   return createClient(
     env.NEXT_PUBLIC_SUPABASE_URL!,
-    env.SUPABASE_SERVICE_ROLE_KEY,
+    secretKey,
     {
       auth: {
         persistSession: false,

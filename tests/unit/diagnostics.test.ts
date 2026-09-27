@@ -9,7 +9,6 @@ import {
   rankedHypotheses,
   runWithChooser,
   selectNextQuestion,
-  shouldStop,
 } from "@/lib/diagnostics/engine";
 import { kitchenSinkKb, parseSymptomIntake, radiatorKb } from "@/lib/diagnostics";
 import type { DiagnosticQuestion } from "@/lib/diagnostics/types";
