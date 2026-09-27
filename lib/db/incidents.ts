@@ -1,4 +1,4 @@
-import { env, hasSupabaseAdminConfig } from "@/lib/env";
+import { shouldUseDemoBackend } from "@/lib/env";
 import * as demo from "@/lib/demo/store";
 import type {
   DiyPlanRow,
@@ -12,9 +12,7 @@ import type {
 import type { IncidentStatus } from "@/types";
 
 export function shouldUseDemoStore(): boolean {
-  if (env.NEXT_PUBLIC_DEMO_MODE) return true;
-  if (!hasSupabaseAdminConfig()) return true;
-  return false;
+  return shouldUseDemoBackend();
 }
 
 async function getAdmin() {

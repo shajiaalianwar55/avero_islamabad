@@ -1,11 +1,9 @@
-import { env, hasSupabaseAdminConfig } from "@/lib/env";
+import { shouldUseDemoBackend } from "@/lib/env";
 import * as demo from "@/lib/demo/store";
 import type { Offer, Provider, ServiceRequestRow } from "@/types/db";
 
 function shouldUseDemoStore(): boolean {
-  if (env.NEXT_PUBLIC_DEMO_MODE) return true;
-  if (!hasSupabaseAdminConfig()) return true;
-  return false;
+  return shouldUseDemoBackend();
 }
 
 async function getAdmin() {

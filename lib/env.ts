@@ -72,6 +72,16 @@ export function supabaseSecretKey(): string | undefined {
   return env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY;
 }
 
+/**
+ * Vercel must use durable storage whenever server credentials are available.
+ * This prevents a stale NEXT_PUBLIC_DEMO_MODE=true setting from selecting
+ * process memory, which is not shared across function invocations.
+ */
+export function shouldUseDemoBackend(): boolean {
+  if (process.env.VERCEL && hasSupabaseAdminConfig()) return false;
+  return env.NEXT_PUBLIC_DEMO_MODE || !hasSupabaseAdminConfig();
+}
+
 export function hasAiConfig(): boolean {
   const key = (env.AI_API_KEY || "").trim();
   if (!key) return false;
