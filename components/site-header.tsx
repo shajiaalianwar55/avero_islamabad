@@ -33,10 +33,10 @@ export function SiteHeader() {
             ))}
             <LanguageToggle />
             <Link
-              href="/incident/new"
+              href="/#start-demo"
               className="rounded-md bg-[var(--avero-teal)] px-3 py-1.5 font-medium text-white hover:bg-[var(--avero-teal)]/90 hover:text-white"
             >
-              Check a problem
+              Start demo
             </Link>
           </nav>
         </div>

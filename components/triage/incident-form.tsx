@@ -5,9 +5,14 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ImageAttach } from "@/components/triage/image-attach";
-import { VoiceInput } from "@/components/triage/voice-input";
-import { ISLAMABAD_AREAS, SERVICE_CATEGORIES } from "@/types";
+import { DemoProgress } from "@/components/demo/progress-steps";
+import { ISLAMABAD_AREAS } from "@/types";
+
+const QUICK = [
+  "Kitchen sink leaking when water runs",
+  "AC airflow weak, filter appears dirty, no electrical warning signs",
+  "Socket buzzing and burning smell",
+];
 
 export function IncidentForm() {
   const router = useRouter();
@@ -15,6 +20,7 @@ export function IncidentForm() {
   const [area, setArea] = useState("F-10");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showMore, setShowMore] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -46,8 +52,9 @@ export function IncidentForm() {
 
   return (
     <form onSubmit={onSubmit} className="space-y-4">
+      <DemoProgress forceStep={0} />
       <div className="space-y-2">
-        <Label htmlFor="area">Home / area</Label>
+        <Label htmlFor="area">Islamabad area</Label>
         <select
           id="area"
           value={area}
@@ -62,15 +69,17 @@ export function IncidentForm() {
         </select>
       </div>
       <div className="space-y-2">
-        <Label>Local categories</Label>
+        <Label>Quick examples (tap to fill)</Label>
         <div className="flex flex-wrap gap-2">
-          {SERVICE_CATEGORIES.map((cat) => (
-            <span
-              key={cat.id}
-              className="rounded-md border border-[var(--avero-line)] px-2 py-1 text-xs"
+          {QUICK.map((q) => (
+            <button
+              key={q}
+              type="button"
+              className="rounded-md border border-[var(--avero-line)] bg-[var(--avero-panel)] px-3 py-2 text-left text-xs hover:border-[var(--avero-teal)]"
+              onClick={() => setDescription(q)}
             >
-              {cat.label}
-            </span>
+              {q}
+            </button>
           ))}
         </div>
       </div>
@@ -80,29 +89,26 @@ export function IncidentForm() {
           id="description"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="Example: There is water under my kitchen sink."
+          placeholder="Describe the problem in plain language…"
           required
         />
-        <VoiceInput
-          onText={(t) =>
-            setDescription((prev) => {
-              const next = t.trim();
-              if (!next) return prev;
-              if (!prev.trim()) return next;
-              // Append once if user already typed something; avoid re-stacking the same phrase
-              if (prev.includes(next)) return prev;
-              return `${prev.trim()} ${next}`;
-            })
-          }
-        />
       </div>
-      <div className="space-y-2">
-        <Label>Photo (optional)</Label>
-        <ImageAttach />
-      </div>
+      <button
+        type="button"
+        className="text-xs text-[var(--avero-muted)] underline"
+        onClick={() => setShowMore((v) => !v)}
+      >
+        {showMore ? "Hide extras" : "Voice / photo (optional)"}
+      </button>
+      {showMore && (
+        <p className="text-xs text-[var(--avero-muted)]">
+          For live demos, prefer the quick examples above — voice and photo are optional
+          and never required.
+        </p>
+      )}
       {error && <p className="text-sm text-[var(--avero-danger)]">{error}</p>}
-      <Button type="submit" disabled={loading || description.trim().length < 3}>
-        {loading ? "Starting triage…" : "Start triage"}
+      <Button type="submit" size="lg" disabled={loading || description.trim().length < 3}>
+        {loading ? "Starting…" : "Continue →"}
       </Button>
     </form>
   );

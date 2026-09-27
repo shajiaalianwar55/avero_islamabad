@@ -1,27 +1,20 @@
-# Judge demo script (3–4 minutes)
+# Judge demo script (≈3 minutes)
 
-## 0:00–0:20
-When something breaks at home in Islamabad, residents often know the symptom but not what it means. Existing booking services usually start after that decision. Avero starts before it.
+## Opening (15s)
+Homepage: “When something breaks in Islamabad, the first problem is knowing what to do. Avero starts before booking.”
 
-## 0:20–1:15
-Demo → Technician scenario (F-10 sink leak). Show adaptive questions and safety indicator.
+## Technician path (~2 min)
+1. Click **1. Technician** guided demo card.
+2. Tap answer chips (no typing).
+3. Decision screen → **See technician offers**.
+4. Wait ~2s for demo offers → **Book recommended offer**.
+5. **Complete repair → Home History**.
+6. Point at warranty AC record already in history.
 
-## 1:15–1:35
-Decision evidence: Technician, facts, concern, likely issue, trade.
+## Emergency proof (20s)
+Homepage → **3. Emergency** → instant safety override.
 
-## 1:35–2:10
-Create request. Open `/provider`, submit one live offer. Load demo offers. Compare.
+## Optional
+Floating **Demos** button if you leave the homepage.
 
-## 2:10–2:40
-Book. Show protected payment state.
-
-## 2:40–3:05
-Provider completes → resident confirms.
-
-## 3:05–3:25
-Home History + older AC warranty record.
-
-## 3:25–3:40
-Emergency scenario: buzzing socket + burning smell → immediate override.
-
-Finish: Avero turns the first confusing minutes into a clear path from incident to resolution.
+Do **not** rely on voice/photo during the pitch.

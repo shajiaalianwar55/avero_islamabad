@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DemoProgress } from "@/components/demo/progress-steps";
 
 export function DecisionView({ incidentId }: { incidentId: string }) {
   const router = useRouter();
@@ -60,47 +61,64 @@ export function DecisionView({ incidentId }: { incidentId: string }) {
 
   if (outcome === "EMERGENCY" || data.incident?.status === "EMERGENCY") {
     return (
-      <Card className="border-[var(--avero-danger)]">
-        <CardHeader>
-          <Badge variant="danger">Emergency</Badge>
-          <CardTitle className="mt-2">Stop troubleshooting</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4 text-sm">
-          <div>
-            <p className="font-medium">Hazard summary</p>
-            <p className="text-[var(--avero-muted)]">
-              {((safety?.hazard_codes as string[]) || []).join(", ") ||
-                "High-risk condition detected"}
+      <div className="space-y-4">
+        <DemoProgress forceStep={2} />
+        <Card className="border-[var(--avero-danger)]">
+          <CardHeader>
+            <Badge variant="danger">Emergency</Badge>
+            <CardTitle className="mt-2">Stop troubleshooting</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4 text-sm">
+            <p className="text-base text-[var(--avero-ink)]">
+              Avero blocked DIY because this looks dangerous.
             </p>
-          </div>
-          <div>
-            <p className="font-medium">Safe immediate actions</p>
-            <ul className="list-disc pl-5">
-              {((safety?.safe_immediate_actions as string[]) ||
-                (safety?.safe_actions as string[]) ||
-                []).map((a) => (
-                <li key={a}>{a}</li>
-              ))}
-            </ul>
-          </div>
-          <div>
-            <p className="font-medium">Prohibited</p>
-            <ul className="list-disc pl-5">
-              {((safety?.prohibited_actions as string[]) || []).map((a) => (
-                <li key={a}>{a}</li>
-              ))}
-            </ul>
-          </div>
-          <p className="text-[var(--avero-muted)]">
-            Avero is not a substitute for emergency services. Call qualified help now.
-          </p>
-        </CardContent>
-      </Card>
+            <div>
+              <p className="font-medium">Do this now</p>
+              <ul className="mt-1 list-disc pl-5">
+                {((safety?.safe_immediate_actions as string[]) ||
+                  (safety?.safe_actions as string[]) ||
+                  [
+                    "Leave the area if smoke or sparks continue",
+                    "Do not touch the socket",
+                    "Call a licensed electrician or emergency services",
+                  ]
+                ).map((a) => (
+                  <li key={a}>{a}</li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <p className="font-medium">Do not</p>
+              <ul className="mt-1 list-disc pl-5 text-[var(--avero-muted)]">
+                {((safety?.prohibited_actions as string[]) || [
+                  "Do not attempt DIY repairs",
+                  "Do not pour water on electrical equipment",
+                ]).map((a) => (
+                  <li key={a}>{a}</li>
+                ))}
+              </ul>
+            </div>
+            <p className="text-[var(--avero-muted)]">
+              Avero is not a substitute for emergency services.
+            </p>
+            <Link href="/#start-demo">
+              <Button variant="secondary">Back to demos</Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
+  const isDiy = outcome === "DIY" || data.incident?.status === "DIY_ACTIVE";
+  const isTech =
+    outcome === "TECHNICIAN" ||
+    data.incident?.status === "TECHNICIAN_REQUIRED" ||
+    data.incident?.status === "SERVICE_REQUESTED";
+
   return (
     <div className="space-y-4">
+      <DemoProgress forceStep={2} />
       <div className="flex flex-wrap gap-2">
         <Badge>{String(outcome || "Pending")}</Badge>
         <Badge variant="outline">
@@ -109,10 +127,12 @@ export function DecisionView({ incidentId }: { incidentId: string }) {
       </div>
       <Card>
         <CardHeader>
-          <CardTitle>Likely issue</CardTitle>
+          <CardTitle>What Avero decided</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
-          <p>{String(decision?.likely_issue || "Still collecting facts")}</p>
+          <p className="text-base font-medium text-[var(--avero-ink)]">
+            {String(decision?.likely_issue || "Still collecting facts")}
+          </p>
           <div>
             <p className="font-medium">Observed facts</p>
             <ul className="list-disc pl-5 text-[var(--avero-muted)]">
@@ -133,28 +153,23 @@ export function DecisionView({ incidentId }: { incidentId: string }) {
               ))}
             </ul>
           </div>
-          <p>
-            <span className="font-medium">Next step: </span>
-            {String(decision?.recommended_next_step || "—")}
-          </p>
         </CardContent>
       </Card>
-      <div className="flex flex-wrap gap-2">
-        {(outcome === "DIY" || data.incident?.status === "DIY_ACTIVE") && (
-          <Link href={`/incident/${incidentId}/diy`}>
-            <Button>Start DIY guidance</Button>
-          </Link>
-        )}
-        {(outcome === "TECHNICIAN" ||
-          data.incident?.status === "TECHNICIAN_REQUIRED" ||
-          data.incident?.status === "SERVICE_REQUESTED") && (
-          <Button onClick={createRequest} disabled={creating}>
-            {creating ? "Creating request…" : "Create structured request"}
-          </Button>
-        )}
-        <Link href={`/incident/${incidentId}`}>
-          <Button variant="secondary">Back to chat</Button>
-        </Link>
+
+      <div className="rounded-lg border border-[var(--avero-teal)]/40 bg-[var(--avero-teal)]/5 p-4">
+        <p className="text-sm font-medium text-[var(--avero-ink)]">Continue the demo</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {isDiy && (
+            <Link href={`/incident/${incidentId}/diy`}>
+              <Button size="lg">Start DIY guidance →</Button>
+            </Link>
+          )}
+          {isTech && (
+            <Button size="lg" onClick={createRequest} disabled={creating}>
+              {creating ? "Preparing offers…" : "See technician offers →"}
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );

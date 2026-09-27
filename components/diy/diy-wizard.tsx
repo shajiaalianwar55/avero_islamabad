@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DemoProgress } from "@/components/demo/progress-steps";
 
 type Step = {
   step_order?: number;
@@ -65,7 +66,6 @@ export function DiyWizard({ incidentId }: { incidentId: string }) {
       router.push(`/incident/${incidentId}/decision`);
       return;
     }
-    // escalate — create service request then offers
     const sr = await fetch(`/api/incidents/${incidentId}/service-request`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -86,11 +86,15 @@ export function DiyWizard({ incidentId }: { incidentId: string }) {
 
   return (
     <div className="space-y-4">
+      <DemoProgress forceStep={2} />
       <Card>
         <CardHeader>
           <CardTitle>{planTitle || "DIY guidance"}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
+          <p className="text-[var(--avero-muted)]">
+            One step at a time. Tap Done when the success check passes.
+          </p>
           {safetyNotes.length > 0 && (
             <div className="rounded-md bg-amber-50 p-3 text-amber-900">
               <p className="font-medium">Safety notes</p>
@@ -106,7 +110,7 @@ export function DiyWizard({ incidentId }: { incidentId: string }) {
               <p className="text-xs uppercase tracking-wide text-[var(--avero-muted)]">
                 Step {order}
               </p>
-              <p className="mt-1 text-base">{step.instruction}</p>
+              <p className="mt-1 text-base font-medium">{step.instruction}</p>
               <p className="mt-2 text-[var(--avero-muted)]">
                 Success check: {step.success_check}
               </p>
@@ -115,17 +119,17 @@ export function DiyWizard({ incidentId }: { incidentId: string }) {
         </CardContent>
       </Card>
       <div className="flex flex-wrap gap-2">
-        <Button disabled={busy} onClick={() => respond("DONE")}>
-          Done
+        <Button size="lg" disabled={busy} onClick={() => respond("DONE")}>
+          Done — next step →
         </Button>
         <Button disabled={busy} variant="secondary" onClick={() => respond("CANNOT")}>
-          Cannot do this
+          Can&apos;t do this
         </Button>
-        <Button disabled={busy} variant="secondary" onClick={() => respond("DIFFERENT")}>
-          Something looks different
+        <Button disabled={busy} variant="outline" onClick={() => respond("DIFFERENT")}>
+          Looks different
         </Button>
         <Button disabled={busy} variant="danger" onClick={() => respond("STOP")}>
-          Stop
+          Stop / escalate
         </Button>
       </div>
     </div>

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { DemoProgress } from "@/components/demo/progress-steps";
 
 type Repair = {
   id: string;
@@ -37,6 +38,19 @@ export function HistoryTimeline() {
 
   return (
     <div className="space-y-4">
+      <DemoProgress forceStep={5} />
+      <div className="rounded-lg border border-[var(--avero-teal)]/30 bg-[var(--avero-teal)]/5 p-4 text-sm">
+        <p className="font-medium">Demo complete</p>
+        <p className="mt-1 text-[var(--avero-muted)]">
+          Repairs and warranties stay with the home. The seeded Bedroom AC record shows
+          active warranty for repeat issues.
+        </p>
+        <Link href="/#start-demo" className="mt-3 inline-block">
+          <Button variant="secondary" size="sm">
+            Run another demo
+          </Button>
+        </Link>
+      </div>
       <div className="flex flex-wrap gap-2">
         {["all", "ac", "plumbing", "electrical"].map((f) => (
           <Button
@@ -50,7 +64,9 @@ export function HistoryTimeline() {
         ))}
       </div>
       {filtered.length === 0 && (
-        <p className="text-sm text-[var(--avero-muted)]">No repairs yet.</p>
+        <p className="text-sm text-[var(--avero-muted)]">
+          No repairs yet — finish a technician booking to create one.
+        </p>
       )}
       {filtered.map((r) => (
         <Card key={r.id}>
