@@ -13,30 +13,36 @@ import {
   stopSpeaking,
 } from "@/lib/voice/browser-speech";
 import {
-  APPLIANCE_DIY,
-  APPLIANCE_MCQS,
   DEMO_APPLIANCES,
   applianceLabel,
   buildProblemSummary,
-  scoreOutcome,
   type ApplianceDef,
-  type FlowOutcome,
 } from "@/lib/demo/appliance-flows";
+import {
+  answerAndContinue,
+  createSessionFromIntake,
+  nextStep,
+  parseSymptomIntake,
+  resolveKnowledgeBase,
+  symptomShortcutsForAppliance,
+  type DiagnosticQuestion,
+  type DiagnosticResult,
+  type PathOutcome,
+} from "@/lib/diagnostics";
 
 type WaveState = "idle" | "speaking" | "listening";
-type Phase = "boot" | "appliance" | "questions" | "decision" | "diy" | "done";
+type Phase = "boot" | "appliance" | "symptom" | "questions" | "decision" | "diy" | "done";
 
 type AnswerRow = {
   question: string;
   answer: string;
-  scores: Partial<Record<FlowOutcome, number>>;
 };
 
 type Choice = { id: string; label: string };
 
 /**
- * Voice-first triage: Avero speaks, shows waves, listens for answers.
- * On-screen choices stay visible while listening.
+ * Voice-first triage: same path as screen flow —
+ * appliance → symptom intake → adaptive diagnostics → DIY / tech / emergency.
  */
 export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
   const router = useRouter();
@@ -48,7 +54,7 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
   const [phase, setPhase] = useState<Phase>("boot");
   const [appliance, setAppliance] = useState<ApplianceDef | null>(null);
   const [mcqIndex, setMcqIndex] = useState(0);
-  const [outcome, setOutcome] = useState<FlowOutcome | null>(null);
+  const [outcome, setOutcome] = useState<PathOutcome | null>(null);
   const [diyStep, setDiyStep] = useState(0);
   const [busy, setBusy] = useState(false);
   const [unsupported, setUnsupported] = useState(false);
@@ -58,7 +64,7 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
 
   const createAndRoute = useCallback(
     async (
-      path: FlowOutcome,
+      path: PathOutcome,
       app: ApplianceDef,
       ans: AnswerRow[],
       notes = "",
@@ -173,6 +179,24 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
       return text;
     };
 
+    const matchOption = <T extends { id: string; label: string }>(
+      spoken: string,
+      options: T[]
+    ): T | null => {
+      const normalized = spoken.replace(/^\d+\.\s*/, "");
+      return (
+        matchSpokenChoice(normalized, options) ||
+        matchSpokenChoice(spoken, options) ||
+        options.find(
+          (o, idx) =>
+            spoken === `${idx + 1}. ${o.label}` ||
+            spoken === o.label ||
+            lowerIncludesOption(spoken, o.label)
+        ) ||
+        null
+      );
+    };
+
     (async () => {
       await new Promise((r) => setTimeout(r, 100));
       if (run.cancelled) return;
@@ -266,18 +290,98 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
 
       setAppliance(chosen);
       setChoices([]);
+
+      // --- Symptom intake (same as screen Problem stage) ---
+      setPhase("symptom");
+      const shortcuts = symptomShortcutsForAppliance(chosen.id);
+      const symptomChoices: Choice[] = shortcuts.map((s, idx) => ({
+        id: s.id,
+        label: `${idx + 1}. ${s.label}`,
+      }));
+      const shortcutLines = shortcuts
+        .map((s, idx) => `Option ${idx + 1}: ${s.label}`)
+        .join(". ");
+
+      showAsk("What's going wrong?", symptomChoices);
       await saySafe(
-        `Okay, ${applianceLabel(chosen)}. I'll ask a few short questions. Answer with option one, two, or three, or tap an option.`
+        `Okay, ${applianceLabel(chosen)}. What's going wrong? ${shortcutLines}. Or describe it in your own words.`,
+        true
       );
       if (run.cancelled) return;
 
-      const mcqs = APPLIANCE_MCQS[chosen.id] || APPLIANCE_MCQS.custom;
-      const collected: AnswerRow[] = [];
+      let symptomText = "";
+      let shortcutId: string | undefined;
+      for (let tryN = 0; tryN < 3 && !symptomText && !run.cancelled; tryN++) {
+        showAsk("What's going wrong?", symptomChoices);
+        const spoken = await hearSafe();
+        if (run.cancelled) return;
+        if (!spoken) {
+          await saySafe(
+            "I didn't catch that. Say a symptom like not heating, or tap an option.",
+            true
+          );
+          continue;
+        }
+        const matched = matchOption(spoken, shortcuts);
+        if (matched) {
+          shortcutId = matched.id;
+          symptomText = matched.label;
+        } else {
+          // Free-form description — still drives intake via text parsing
+          symptomText = spoken.replace(/^\d+\.\s*/, "").trim();
+        }
+      }
 
-      for (let i = 0; i < mcqs.length && !run.cancelled; i++) {
-        setMcqIndex(i);
+      if (run.cancelled) return;
+      if (!symptomText) {
+        await saySafe("Let's continue on the screen instead.");
+        onExit();
+        return;
+      }
+
+      setChoices([]);
+      await saySafe(`Got it. ${symptomText}. I'll ask a few short follow-ups.`);
+      if (run.cancelled) return;
+
+      const intake = parseSymptomIntake({
+        applianceId: chosen.id,
+        text: symptomText,
+        shortcutId,
+      });
+      const knowledge = resolveKnowledgeBase({
+        applianceId: chosen.id,
+        category: chosen.category,
+        nameHint: `${chosen.brand} ${chosen.name}`,
+      });
+      let session = createSessionFromIntake(knowledge, intake);
+      let step = nextStep(knowledge, session);
+      const collected: AnswerRow[] = [
+        { question: "What's going wrong?", answer: symptomText },
+      ];
+
+      // Immediate emergency from intake (e.g. burn/smoke)
+      if (session.safety.emergency && step.stopped && step.outcome === "EMERGENCY") {
+        setOutcome("EMERGENCY");
+        setPhase("decision");
+        await saySafe(
+          "This sounds unsafe. Please stop DIY. I'm taking you to emergency guidance."
+        );
+        if (run.cancelled) return;
+        await createAndRoute(
+          "EMERGENCY",
+          chosen,
+          collected,
+          intake.rawText,
+          saySafe
+        );
+        return;
+      }
+
+      let questionCount = 0;
+      while (!step.stopped && !run.cancelled) {
         setPhase("questions");
-        const q = mcqs[i];
+        setMcqIndex(questionCount);
+        const q = step.question as DiagnosticQuestion;
         const opts: Choice[] = q.options.map((o, idx) => ({
           id: o.id,
           label: `${idx + 1}. ${o.label}`,
@@ -286,45 +390,30 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
           .map((o, idx) => `Option ${idx + 1}: ${o.label}`)
           .join(". ");
 
-        showAsk(q.question, opts);
-        await saySafe(`${q.question} ${optionLines}`, true);
+        showAsk(q.prompt, opts);
+        await saySafe(`${q.prompt} ${optionLines}`, true);
         if (run.cancelled) return;
 
         let matched: (typeof q.options)[number] | null = null;
         for (let tryN = 0; tryN < 2 && !matched && !run.cancelled; tryN++) {
-          showAsk(q.question, opts);
+          showAsk(q.prompt, opts);
           const spoken = await hearSafe();
           if (run.cancelled) return;
-          // Tap may return "1. label" — strip number prefix for matching
-          const normalized = spoken.replace(/^\d+\.\s*/, "");
-          matched =
-            matchSpokenChoice(normalized, q.options) ||
-            matchSpokenChoice(spoken, q.options) ||
-            q.options.find(
-              (o, idx) =>
-                spoken === `${idx + 1}. ${o.label}` ||
-                spoken === o.label ||
-                lowerIncludesOption(spoken, o.label)
-            ) ||
-            null;
+          matched = matchOption(spoken, q.options);
           if (!matched) {
             await saySafe("Please say option one, two, or three — or tap an option.", true);
           }
         }
-        if (!matched) matched = q.options[0];
-        collected.push({
-          question: q.question,
-          answer: matched.label,
-          scores: matched.score,
-        });
+        if (!matched) matched = q.options[0]!;
+        collected.push({ question: q.prompt, answer: matched.label });
         setChoices([]);
         await saySafe(`Got it. ${matched.label}.`);
+        step = answerAndContinue(knowledge, step.session, q, matched.id);
+        questionCount += 1;
       }
 
       if (run.cancelled) return;
-      const result = scoreOutcome(
-        collected.map((a) => ({ optionId: a.answer, scores: a.scores }))
-      );
+      const result = step as DiagnosticResult;
       setOutcome(result.outcome);
       setPhase("decision");
       setChoices([]);
@@ -334,7 +423,13 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
           "This sounds unsafe. Please stop DIY. I'm taking you to emergency guidance."
         );
         if (run.cancelled) return;
-        await createAndRoute("EMERGENCY", chosen, collected, "", saySafe);
+        await createAndRoute(
+          "EMERGENCY",
+          chosen,
+          collected,
+          result.explanation,
+          saySafe
+        );
         return;
       }
 
@@ -344,7 +439,7 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
           { id: "back", label: "Exit talk mode" },
         ]);
         await saySafe(
-          "A technician is the better next step. Say continue to see offers, or say back to leave talk mode.",
+          `${result.explanation || "A technician is the better next step."} Say continue to see offers, or say back to leave talk mode.`,
           true
         );
         if (run.cancelled) return;
@@ -354,16 +449,31 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
           onExit();
           return;
         }
-        await createAndRoute("TECHNICIAN", chosen, collected, "", saySafe);
+        await createAndRoute(
+          "TECHNICIAN",
+          chosen,
+          collected,
+          result.explanation,
+          saySafe
+        );
         return;
       }
 
+      // DIY path from diagnostic result
       await saySafe(
-        "This looks safe to try yourself. I'll guide you step by step. At any time say solved if it's fixed, or say technician if you need help."
+        result.explanation ||
+          "This looks safe to try yourself. I'll guide you step by step. At any time say solved if it's fixed, or say technician if you need help."
       );
       if (run.cancelled) return;
       setPhase("diy");
-      const diy = APPLIANCE_DIY[chosen.id] || APPLIANCE_DIY.custom;
+      const diy = result.diySteps?.length
+        ? result.diySteps
+        : [
+            {
+              instruction: "Try the basic safe check for this appliance.",
+              success_check: "Symptom improves with no new warning signs.",
+            },
+          ];
 
       for (let i = 0; i < diy.length && !run.cancelled; i++) {
         setDiyStep(i);
@@ -372,9 +482,9 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
           { id: "solved", label: "Issue solved" },
           { id: "tech", label: "Get a technician" },
         ];
-        showAsk(diy[i].instruction, diyChoices);
+        showAsk(diy[i]!.instruction, diyChoices);
         await saySafe(
-          `Step ${i + 1}. ${diy[i].instruction} Success check: ${diy[i].success_check}. When ready, say next, solved, or technician.`,
+          `Step ${i + 1}. ${diy[i]!.instruction} Success check: ${diy[i]!.success_check}. When ready, say next, solved, or technician.`,
           true
         );
         if (run.cancelled) return;
@@ -496,6 +606,7 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
       {appliance ? (
         <p className="mt-2 text-xs text-[var(--avero-muted)]">
           {appliance.name} · {appliance.brand} · {appliance.yearBought}
+          {phase === "symptom" ? " · Symptom" : ""}
           {phase === "questions" ? ` · Q${mcqIndex + 1}` : ""}
           {phase === "diy" ? ` · DIY step ${diyStep + 1}` : ""}
           {outcome ? ` · ${outcome}` : ""}
