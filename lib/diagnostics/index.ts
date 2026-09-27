@@ -7,3 +7,5 @@ export {
   radiatorKb,
   kitchenSinkKb,
 } from "./domains";
+export { buildEmergencyCopy } from "./emergency-copy";
+export type { EmergencyCopy } from "./emergency-copy";

@@ -96,7 +96,7 @@ export function TriageChat({ incidentId }: { incidentId: string }) {
 
   return (
     <div className="space-y-4">
-      <DemoProgress forceStep={2} />
+      <DemoProgress current="questions" branch="none" />
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant={safetyLevel === "emergency" ? "danger" : "default"}>
           Safety: {safetyLevel}

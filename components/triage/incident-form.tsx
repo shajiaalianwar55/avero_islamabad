@@ -52,7 +52,7 @@ export function IncidentForm() {
 
   return (
     <form onSubmit={onSubmit} className="space-y-4">
-      <DemoProgress forceStep={0} />
+      <DemoProgress current="report" branch="none" />
       <div className="space-y-2">
         <Label htmlFor="area">Islamabad area</Label>
         <select

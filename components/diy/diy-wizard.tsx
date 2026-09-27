@@ -87,7 +87,7 @@ export function DiyWizard({ incidentId }: { incidentId: string }) {
 
   return (
     <div className="relative space-y-4 pb-24">
-      <DemoProgress forceStep={4} />
+      <DemoProgress current="diy" branch="DIY" />
       <Card>
         <CardHeader>
           <CardTitle>{planTitle || "DIY guidance"}</CardTitle>

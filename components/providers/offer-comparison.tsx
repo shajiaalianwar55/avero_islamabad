@@ -113,7 +113,7 @@ export function OfferComparison({ incidentId }: { incidentId: string }) {
 
   return (
     <div className="space-y-4">
-      <DemoProgress forceStep={4} />
+      <DemoProgress current="book" branch="TECHNICIAN" />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-[var(--avero-muted)]">
           Compare offers, then book one. Demo quotes load automatically.

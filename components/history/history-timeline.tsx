@@ -38,7 +38,7 @@ export function HistoryTimeline() {
 
   return (
     <div className="space-y-4">
-      <DemoProgress forceStep={5} />
+      <DemoProgress current="history" branch="DIY" />
       <div className="rounded-lg border border-[var(--avero-teal)]/30 bg-[var(--avero-teal)]/5 p-4 text-sm">
         <p className="font-medium">Demo complete</p>
         <p className="mt-1 text-[var(--avero-muted)]">

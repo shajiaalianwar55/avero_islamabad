@@ -28,6 +28,8 @@ import {
   type DiagnosticSession,
   type PathOutcome,
 } from "@/lib/diagnostics";
+import { buildEmergencyCopy } from "@/lib/diagnostics/emergency-copy";
+import { EmergencyDecisionPanel } from "@/components/safety/emergency-decision-panel";
 
 type Phase = "report" | "appliance" | "questions" | "decision" | "diy";
 
@@ -61,19 +63,32 @@ export function GuidedIncidentFlow() {
 
   const progressStep =
     phase === "report"
-      ? 0
+      ? "report"
       : phase === "appliance"
-        ? 1
+        ? "appliance"
         : phase === "questions"
-          ? 2
+          ? "questions"
           : phase === "decision"
-            ? 3
-            : 4;
+            ? outcome === "EMERGENCY"
+              ? "emergency"
+              : "decision"
+            : phase === "diy"
+              ? "diy"
+              : "decision";
+
+  const progressBranch =
+    outcome === "EMERGENCY"
+      ? "EMERGENCY"
+      : outcome === "DIY" || phase === "diy"
+        ? "DIY"
+        : outcome === "TECHNICIAN"
+          ? "TECHNICIAN"
+          : "none";
 
   if (talkMode) {
     return (
       <div className="space-y-4">
-        <DemoProgress forceStep={progressStep} />
+        <DemoProgress current={progressStep} branch={progressBranch} />
         <VoiceTalkMode onExit={() => setTalkMode(false)} />
       </div>
     );
@@ -244,7 +259,7 @@ export function GuidedIncidentFlow() {
 
   return (
     <div className="space-y-4">
-      <DemoProgress forceStep={progressStep} />
+      <DemoProgress current={progressStep} branch={progressBranch} />
 
       {phase === "report" && (
         <div className="space-y-4">
@@ -506,21 +521,48 @@ export function GuidedIncidentFlow() {
         </div>
       )}
 
-      {phase === "decision" && outcome && appliance && result && (
+      {phase === "decision" && outcome && appliance && result && outcome === "EMERGENCY" && (
+        <div className="space-y-4">
+          {error && <p className="text-sm text-[var(--avero-danger)]">{error}</p>}
+          <EmergencyDecisionPanel
+            copy={buildEmergencyCopy(result)}
+            primaryBusy={busy}
+            primaryLabel="Save to home history"
+            onPrimary={continueEmergency}
+            details={[
+              {
+                label: "Appliance",
+                value: `${appliance.brand} ${appliance.name} · Bought ${appliance.yearBought} · ${appliance.room}`,
+              },
+              {
+                label: "Top hypothesis",
+                value: result.topHypothesis?.summary || result.topHypothesis?.label || "—",
+              },
+              {
+                label: "Answers",
+                value: result.answers.map((a) => a.label).join(" · ") || "—",
+              },
+              {
+                label: "Also considered",
+                value:
+                  result.ranked
+                    .slice(1, 4)
+                    .map((r) => r.hypothesis.label)
+                    .join("; ") || "—",
+              },
+              {
+                label: "Stop reason",
+                value: result.reason,
+              },
+            ]}
+          />
+        </div>
+      )}
+
+      {phase === "decision" && outcome && appliance && result && outcome !== "EMERGENCY" && (
         <div className="space-y-4">
           <div className="flex flex-wrap gap-2">
-            <Badge
-              variant={
-                outcome === "EMERGENCY"
-                  ? "danger"
-                  : outcome === "DIY"
-                    ? "success"
-                    : "default"
-              }
-            >
-              {outcome}
-            </Badge>
-            <Badge variant="outline">{applianceLabel(appliance)}</Badge>
+            <Badge variant={outcome === "DIY" ? "success" : "default"}>{outcome}</Badge>
             {result.topHypothesis && (
               <Badge variant="outline">{result.topHypothesis.label}</Badge>
             )}
@@ -528,35 +570,29 @@ export function GuidedIncidentFlow() {
           <Card>
             <CardHeader>
               <CardTitle>
-                {outcome === "EMERGENCY"
-                  ? "This looks unsafe — stop DIY"
-                  : outcome === "DIY"
-                    ? "Safe to try a guided DIY fix"
-                    : "A technician is the better next step"}
+                {outcome === "DIY"
+                  ? "Safe to try a guided DIY fix"
+                  : "A technician is the better next step"}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm text-[var(--avero-muted)]">
               <p className="text-base text-[var(--avero-ink)]">{result.explanation}</p>
-              <p>
-                Based on {result.answers.length} adaptive question
-                {result.answers.length === 1 ? "" : "s"} about the{" "}
-                <strong>{applianceLabel(appliance)}</strong>
-                {notes ? ` (“${notes.slice(0, 80)}${notes.length > 80 ? "…" : ""}”)` : ""}.
-              </p>
-              <ul className="list-disc pl-5">
-                {result.answers.map((a) => (
-                  <li key={`${a.questionId}-${a.optionId}`}>
-                    <span className="text-[var(--avero-ink)]">{a.label}</span>
-                  </li>
-                ))}
-              </ul>
-              {result.ranked.slice(0, 3).length > 1 && (
-                <p className="text-xs">
-                  Also considered:{" "}
-                  {result.ranked
-                    .slice(1, 3)
-                    .map((r) => r.hypothesis.label)
-                    .join("; ")}
+              {outcome === "DIY" && (
+                <ul className="list-disc pl-5">
+                  {result.answers.map((a) => (
+                    <li key={`${a.questionId}-${a.optionId}`}>
+                      <span className="text-[var(--avero-ink)]">{a.label}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {outcome === "TECHNICIAN" && result.topHypothesis && (
+                <p>
+                  Likely issue:{" "}
+                  <strong className="text-[var(--avero-ink)]">
+                    {result.topHypothesis.label}
+                  </strong>
+                  . {result.topHypothesis.summary}
                 </p>
               )}
             </CardContent>
@@ -577,11 +613,6 @@ export function GuidedIncidentFlow() {
             {outcome === "TECHNICIAN" && (
               <Button size="lg" disabled={busy} onClick={continueTechnician}>
                 {busy ? "Finding technicians…" : "See technician offers →"}
-              </Button>
-            )}
-            {outcome === "EMERGENCY" && (
-              <Button size="lg" variant="danger" disabled={busy} onClick={continueEmergency}>
-                {busy ? "Opening safety screen…" : "Show emergency actions →"}
               </Button>
             )}
           </div>

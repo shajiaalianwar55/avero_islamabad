@@ -94,7 +94,7 @@ export function BookingPanel({ bookingId }: { bookingId: string }) {
 
   return (
     <div className="space-y-4">
-      <DemoProgress forceStep={done ? 5 : 4} />
+      <DemoProgress current={done ? "history" : "book"} branch="TECHNICIAN" />
       <Card>
         <CardHeader>
           <CardTitle>Booking secured</CardTitle>
