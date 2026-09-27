@@ -273,12 +273,21 @@ export function GuidedIncidentFlow() {
         notes: notes || "Resolved via guided DIY",
         answers: answerRows,
       });
-      await fetch("/api/incidents", {
+      await fetch("/api/history/diy-complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           description: `${description}. User confirmed DIY resolved.`,
           area,
+          appliance_name: appliance
+            ? `${appliance.brand} ${appliance.name}`
+            : "Appliance",
+          appliance_id: appliance?.id,
+          category: appliance?.category,
+          work_done:
+            result?.diySteps?.map((s) => s.instruction).join(" → ") ||
+            result?.explanation ||
+            "Guided DIY completed",
         }),
       });
       router.push("/history");

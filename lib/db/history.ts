@@ -97,6 +97,13 @@ export async function listRepairHistory(
     warranty_remaining_days: warrantyRemainingDays(r.warranty_expires_at),
     warranty_active: hasActiveWarranty(r.warranty_expires_at),
     asset: r.asset_id ? assetMap.get(r.asset_id) ?? null : null,
+    category:
+      (r.asset_id ? assetMap.get(r.asset_id)?.asset_type : null) ||
+      (/ac|cooling/i.test(r.title) ? "ac" : null) ||
+      (/sink|plumb|pipe|faucet/i.test(r.title) ? "plumbing" : null) ||
+      (/electric|socket|wiring/i.test(r.title) ? "electrical" : null) ||
+      (/diy/i.test(r.title) || r.provider_name === "Self (DIY)" ? "diy" : null) ||
+      undefined,
   }));
 }
 

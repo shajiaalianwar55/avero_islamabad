@@ -488,6 +488,34 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
             },
           ];
 
+      const saveDiyToHistory = async () => {
+        const description = buildProblemSummary({
+          applianceName: chosen.name,
+          brand: chosen.brand,
+          yearBought: chosen.yearBought,
+          room: chosen.room,
+          notes: "Resolved via voice DIY",
+          answers: collected.map((a) => ({
+            question: a.question,
+            answer: a.answer,
+          })),
+        });
+        await fetch("/api/history/diy-complete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            description: `${description}. User confirmed DIY resolved.`,
+            area: "F-10",
+            appliance_name: `${chosen.brand} ${chosen.name}`,
+            appliance_id: chosen.id,
+            category: chosen.category,
+            work_done:
+              diy.map((s) => s.instruction).join(" → ") ||
+              "Resolved with Avero voice DIY guidance",
+          }),
+        }).catch(() => null);
+      };
+
       for (let i = 0; i < diy.length && !run.cancelled; i++) {
         setDiyStep(i);
         const diyChoices: Choice[] = [
@@ -507,6 +535,7 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
           setChoices([]);
           await saySafe("Great — glad it's fixed. Opening your home history.");
           setPhase("done");
+          await saveDiyToHistory();
           router.push("/history");
           return;
         }
@@ -547,6 +576,7 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
         );
       } else {
         await saySafe("Marked as solved. Opening history.");
+        await saveDiyToHistory();
         router.push("/history");
       }
     })();
@@ -656,9 +686,23 @@ export function VoiceTalkMode({ onExit }: { onExit: () => void }) {
             type="button"
             size="lg"
             disabled={busy}
-            onClick={() => {
+            onClick={async () => {
               runRef.current.cancelled = true;
               stopSpeaking();
+              if (appliance) {
+                await fetch("/api/history/diy-complete", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    description: `${appliance.brand} ${appliance.name} — voice DIY marked solved`,
+                    area: "F-10",
+                    appliance_name: `${appliance.brand} ${appliance.name}`,
+                    appliance_id: appliance.id,
+                    category: appliance.category,
+                    work_done: "Resolved with Avero voice DIY guidance",
+                  }),
+                }).catch(() => null);
+              }
               router.push("/history");
             }}
           >

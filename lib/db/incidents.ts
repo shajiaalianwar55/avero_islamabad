@@ -27,6 +27,7 @@ export async function createIncident(input: {
   asset_id?: string | null;
   initial_description: string;
   category_guess?: string | null;
+  status?: Incident["status"];
 }): Promise<Incident> {
   if (shouldUseDemoStore()) {
     return demo.createIncident(input);
@@ -41,7 +42,7 @@ export async function createIncident(input: {
         asset_id: input.asset_id ?? null,
         initial_description: input.initial_description,
         category_guess: input.category_guess ?? null,
-        status: "TRIAGE",
+        status: input.status ?? "TRIAGE",
       })
       .select()
       .single();
