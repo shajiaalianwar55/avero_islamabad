@@ -351,8 +351,7 @@ export function GuidedIncidentFlow() {
               Which appliance is it?
             </h2>
             <p className="mt-1 text-sm text-[var(--avero-muted)]">
-              Demo highlight: <strong>Delonghi radiator</strong> — deep diagnostic tree. Other
-              appliances use the same engine.
+              From this home — brand and year bought shown. Or add another.
             </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -361,17 +360,8 @@ export function GuidedIncidentFlow() {
                 key={a.id}
                 type="button"
                 onClick={() => selectAppliance(a)}
-                className={`rounded-xl border bg-[var(--avero-panel)] p-4 text-left transition hover:border-[var(--avero-teal)] ${
-                  a.id === "radiator"
-                    ? "border-2 border-[var(--avero-teal)]"
-                    : "border-[var(--avero-line)]"
-                }`}
+                className="rounded-xl border border-[var(--avero-line)] bg-[var(--avero-panel)] p-4 text-left transition hover:border-[var(--avero-teal)]"
               >
-                {a.id === "radiator" && (
-                  <Badge className="mb-2" variant="default">
-                    Demo path
-                  </Badge>
-                )}
                 <p className="text-2xl" aria-hidden>
                   {a.icon}
                 </p>
